@@ -15,12 +15,13 @@ interface LivePreviewFollow {
   sessions: QueueActiveSession[];
   gallerySessions: QueueProgressSession[];
   pinnedSessionId: string | null;
+  canFollowProgress: boolean;
   /**
    * Shared live target: pinned, then newest-started running session, then first settling session in gallery order,
    * else null.
    */
   followedSessionId: string | null;
-  /** Sets Auto-switch to In progress and pins `sessionId`: a tile click, or an arrow step onto a tile. */
+  /** Sets Auto-switch to In progress and pins `sessionId` when Newest is unlocked. */
   follow(sessionId: string): void;
   pin(sessionId: string): void;
   showAll(): void;
@@ -30,11 +31,12 @@ const LivePreviewFollowContext = createContext<LivePreviewFollow | null>(null);
 
 /** Owned by the mounted Workbench, never persisted with project documents. */
 export const LivePreviewFollowProvider = ({ children }: { children: ReactNode }) => {
-  const { projectId, items, enabled } = useActiveProjectSelector((project) => ({
+  const { projectId, items, enabled, canFollowProgress } = useActiveProjectSelector((project) => ({
     projectId: project.id,
     items: project.queue.items,
     // Live frames show only on In progress; Newest switches to finished results alone.
     enabled: project.settings.viewerAutoSwitch === 'progress',
+    canFollowProgress: project.settings.viewerAutoSwitch !== 'latest-locked',
   }));
   const running = useActiveProgressTargets();
   const followed = useFollowedProgressTargets();
@@ -72,14 +74,18 @@ export const LivePreviewFollowProvider = ({ children }: { children: ReactNode })
       gallerySessions,
       pinnedSessionId,
       followedSessionId,
+      canFollowProgress,
       follow: (sessionId) => {
+        if (!canFollowProgress) {
+          return;
+        }
         account.updateProjectPreferences({ viewerAutoSwitch: 'progress' });
         setSelection({ projectId, sessionId });
       },
       pin: (sessionId) => setSelection({ projectId, sessionId }),
       showAll: () => setSelection({ projectId, sessionId: null }),
     }),
-    [account, sessions, gallerySessions, followedSessionId, pinnedSessionId, projectId]
+    [account, canFollowProgress, sessions, gallerySessions, followedSessionId, pinnedSessionId, projectId]
   );
   return <LivePreviewFollowContext value={value}>{children}</LivePreviewFollowContext>;
 };

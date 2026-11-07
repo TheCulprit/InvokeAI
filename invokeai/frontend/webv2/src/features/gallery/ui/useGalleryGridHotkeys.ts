@@ -175,7 +175,9 @@ export const useGalleryGridHotkeys = ({
     }
 
     if (entry.kind === 'session') {
-      moveToEntry(entry, () => followProgressSession(entry.id, { revealPreview: false }));
+      if (followProgressSession) {
+        moveToEntry(entry, () => followProgressSession(entry.id, { revealPreview: false }));
+      }
       return;
     }
 

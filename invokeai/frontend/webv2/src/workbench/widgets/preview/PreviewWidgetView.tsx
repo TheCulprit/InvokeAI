@@ -1,5 +1,5 @@
 import type { SystemStyleObject } from '@chakra-ui/react';
-import type { QueueActiveSession, QueueItem } from '@features/queue/contracts';
+import type { QueueActiveSession, QueueItem, QueueProgressSession } from '@features/queue/contracts';
 import type { WidgetViewProps } from '@workbench/widgetContracts';
 
 import { Box, Flex, Stack, Text } from '@chakra-ui/react';
@@ -124,6 +124,7 @@ export const getVideoFrameCopyNotice = (
     : { kind: 'error', title: translate(VIDEO_FRAME_COPY_FAILURE_KEYS[result.reason]) };
 
 const EMPTY_BOARDS: GalleryBoard[] = [];
+const EMPTY_PROGRESS_SESSIONS: readonly QueueProgressSession[] = [];
 
 const fallbackBoards: GalleryBoard[] = [
   {
@@ -285,7 +286,7 @@ export const PreviewWidgetView = ({ region, runtime }: WidgetViewProps) => {
     followSession: livePreview.follow,
     isComparing,
     localItems,
-    progressSessions: livePreview.gallerySessions,
+    progressSessions: livePreview.canFollowProgress ? livePreview.gallerySessions : EMPTY_PROGRESS_SESSIONS,
     queueItems,
     selectGalleryItem: selectGalleryItemAtPage,
     selectedImageQuery,
@@ -508,7 +509,7 @@ export const PreviewWidgetView = ({ region, runtime }: WidgetViewProps) => {
             leadingItemCount: stripItemCount,
             onCompare: compareFilmstripItem,
             onContextMenu: openFilmstripItemContextMenu,
-            onFollowSession: livePreview.follow,
+            onFollowSession: livePreview.canFollowProgress ? livePreview.follow : undefined,
             onSelect: selectPreviewItem,
             onUnpinSession: livePreview.showAll,
             sessions: livePreview.gallerySessions,
@@ -521,6 +522,7 @@ export const PreviewWidgetView = ({ region, runtime }: WidgetViewProps) => {
       compareFilmstripItem,
       density,
       isFilmstripVisible,
+      livePreview.canFollowProgress,
       livePreview.follow,
       livePreview.followedSessionId,
       livePreview.gallerySessions,

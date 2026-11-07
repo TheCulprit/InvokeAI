@@ -75,6 +75,7 @@ export const PreviewHeaderActions = (_props: WidgetViewProps) => {
         <PreviewZoomMenu density={controlDensity} zoom={zoomControls} />
       ) : null}
       <AutoSwitchMenu
+        allowLocked
         chrome="header"
         density="compact"
         positioning={AUTO_SWITCH_POSITIONING}

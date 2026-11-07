@@ -3723,6 +3723,7 @@
       "viewGraph": "View graph"
     },
     "preview": {
+      "autoSwitchLatestLocked": "Newest (locked)",
       "boardAndItem": "{{board}} / {{name}}",
       "chooseAnotherItem": "{{label}}. Choose another item",
       "commands": {

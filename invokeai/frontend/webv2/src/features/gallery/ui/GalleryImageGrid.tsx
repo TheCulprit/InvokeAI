@@ -431,8 +431,10 @@ export const GalleryImageGrid = ({
     getItemLabel,
     ImageContextMenu,
     followedProgressSessionId,
+    followProgressSession,
     progressSessions,
   } = useGalleryUi();
+  const canFollowProgress = followProgressSession !== undefined;
   const { data: indexAvailability } = useQuery(imageIndexAvailabilityOptions());
   const getReadyItemLabel = indexAvailability?.state === 'ready' ? getItemLabel : null;
   const [isDropActive, setIsDropActive] = useState(false);
@@ -585,12 +587,13 @@ export const GalleryImageGrid = ({
         ? progressSessions.map((session) => ({
             id: session.id,
             kind: 'session',
-            navigable: session.state === 'running',
+            navigable: canFollowProgress && session.state === 'running',
           }))
         : [],
       ...(sparseRecentAtTop ? [recentEntries, listingEntries] : [listingEntries, recentEntries]),
     ];
   }, [
+    canFollowProgress,
     gallery.items,
     columnCount,
     isProgressOpen,

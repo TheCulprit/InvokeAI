@@ -6263,6 +6263,33 @@ describe('workbenchReducer Phase 5 generation flow', () => {
     expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:selected.png');
   });
 
+  it('follows the next finished result after a manual Gallery selection under Newest (locked)', () => {
+    let state = primeGenerate();
+    state = workbenchReducer(state, { destination: 'gallery', type: 'setInvocationDestination' });
+    state = workbenchReducer(state, {
+      settings: { viewerAutoSwitch: 'latest-locked' },
+      type: 'setActiveProjectSettings',
+    });
+    state = submitGenerate(state);
+    const project = getActiveProject(state);
+    const queueItem = project.queue.items[0]!;
+
+    state = workbenchReducer(state, { item: createGalleryImageItem('selected.png'), type: 'selectGalleryItem' });
+
+    expect(getActiveProject(state).settings.viewerAutoSwitch).toBe('latest-locked');
+    expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:selected.png');
+
+    state = workbenchReducer(state, {
+      images: [createImage('completed.png', queueItem.id)],
+      projectId: project.id,
+      queueItemId: queueItem.id,
+      type: 'routeQueueItemResults',
+    });
+
+    expect(getActiveProject(state).settings.viewerAutoSwitch).toBe('latest-locked');
+    expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:completed.png');
+  });
+
   it.each(['latest', 'progress'] as const)('selects each finished result under %s', (mode) => {
     let state = primeGenerate();
     state = workbenchReducer(state, { destination: 'gallery', type: 'setInvocationDestination' });

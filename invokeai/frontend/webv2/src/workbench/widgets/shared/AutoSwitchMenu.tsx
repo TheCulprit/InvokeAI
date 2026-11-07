@@ -5,18 +5,26 @@ import { Icon, Menu, Portal, Text } from '@chakra-ui/react';
 import { Button } from '@platform/ui/Button';
 import { MenuContent } from '@platform/ui/Menu';
 import { Tooltip, useTooltipTriggerIds } from '@platform/ui/Tooltip';
-import { ActivityIcon, CheckIcon, GalleryHorizontalEndIcon, LocateOffIcon, type LucideIcon } from 'lucide-react';
+import {
+  ActivityIcon,
+  CheckIcon,
+  GalleryHorizontalEndIcon,
+  LocateOffIcon,
+  LockIcon,
+  type LucideIcon,
+} from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-/** The Preview's modes, which the Canvas staging bar shares. */
-type AutoSwitchMode = ViewerAutoSwitchMode;
+type SharedMode = Exclude<ViewerAutoSwitchMode, 'latest-locked'>;
 
-const AUTO_SWITCH_MODES: readonly AutoSwitchMode[] = ['off', 'progress', 'latest'];
+const SHARED_MODES: readonly SharedMode[] = ['off', 'progress', 'latest'];
+const PREVIEW_MODES: readonly ViewerAutoSwitchMode[] = [...SHARED_MODES, 'latest-locked'];
 
-/** Both widgets name the modes with the staging bar's keys, so existing translations carry over. */
-const MODE_LABEL_KEYS: Record<AutoSwitchMode, string> = {
+/** Both widgets name the shared modes with the staging bar's keys, so existing translations carry over. */
+const MODE_LABEL_KEYS: Record<ViewerAutoSwitchMode, string> = {
   latest: 'widgets.canvas.staging.autoSwitchLatest',
+  'latest-locked': 'widgets.preview.autoSwitchLatestLocked',
   off: 'widgets.canvas.staging.autoSwitchOff',
   progress: 'widgets.canvas.staging.autoSwitchProgress',
 };
@@ -26,8 +34,9 @@ const MODE_LABEL_KEYS: Record<AutoSwitchMode, string> = {
  * view stays put), In progress a live trace (it follows a generation as it streams), Newest the front of a stack (it
  * jumps to each finished result). Pin is not used for Off: the Preview filmstrip already marks a pinned session with it.
  */
-const MODE_ICONS: Record<AutoSwitchMode, LucideIcon> = {
+const MODE_ICONS: Record<ViewerAutoSwitchMode, LucideIcon> = {
   latest: GalleryHorizontalEndIcon,
+  'latest-locked': LockIcon,
   off: LocateOffIcon,
   progress: ActivityIcon,
 };
@@ -42,9 +51,11 @@ const TRIGGER_CHROME = {
   toolbar: { button: { size: 'md' } },
 } as const;
 
-interface AutoSwitchMenuProps {
-  value: AutoSwitchMode;
-  onChange: (mode: AutoSwitchMode) => void;
+type AutoSwitchMenuSelection =
+  | { allowLocked?: false; value: SharedMode; onChange: (mode: SharedMode) => void }
+  | { allowLocked: true; value: ViewerAutoSwitchMode; onChange: (mode: ViewerAutoSwitchMode) => void };
+
+type AutoSwitchMenuProps = AutoSwitchMenuSelection & {
   positioning: { placement: 'bottom-end' | 'top-end' };
   /** `full` shows the current mode beside the icon; `compact` is the icon alone, named by its tooltip. */
   density: 'compact' | 'full';
@@ -53,7 +64,7 @@ interface AutoSwitchMenuProps {
   /** A host's container rules for the trigger and its mode text, such as the staging bar's narrow collapse. */
   triggerCss?: SystemStyleObject;
   valueCss?: SystemStyleObject;
-}
+};
 
 /** What switches the view to new work: a menu of the modes, with the current one checked. */
 export const AutoSwitchMenu = ({
@@ -63,6 +74,7 @@ export const AutoSwitchMenu = ({
   triggerCss,
   value,
   valueCss,
+  allowLocked,
   onChange,
 }: AutoSwitchMenuProps) => {
   const { t } = useTranslation();
@@ -73,13 +85,17 @@ export const AutoSwitchMenu = ({
   const ModeIcon = MODE_ICONS[value];
   const handleValueChange = useCallback(
     ({ value }: { value: string }) => {
-      const mode = AUTO_SWITCH_MODES.find((candidate) => candidate === value);
+      if (allowLocked && value === 'latest-locked') {
+        onChange(value);
+        return;
+      }
+      const mode = SHARED_MODES.find((candidate) => candidate === value);
 
       if (mode) {
         onChange(mode);
       }
     },
-    [onChange]
+    [allowLocked, onChange]
   );
 
   return (
@@ -108,7 +124,7 @@ export const AutoSwitchMenu = ({
           <MenuContent minW="8rem" py="1">
             <Menu.RadioItemGroup value={value} onValueChange={handleValueChange}>
               <Menu.ItemGroupLabel>{title}</Menu.ItemGroupLabel>
-              {AUTO_SWITCH_MODES.map((mode) => (
+              {(allowLocked ? PREVIEW_MODES : SHARED_MODES).map((mode) => (
                 <Menu.RadioItem key={mode} value={mode}>
                   <Menu.ItemIndicator>
                     <CheckIcon size={12} />

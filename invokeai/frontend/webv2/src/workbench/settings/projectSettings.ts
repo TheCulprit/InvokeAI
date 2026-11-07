@@ -121,7 +121,7 @@ export const getLayeredKeys = (ownerId: string): Readonly<Record<string, Layered
 };
 
 export const isViewerAutoSwitchMode = (value: unknown): value is ViewerAutoSwitchMode =>
-  value === 'off' || value === 'latest' || value === 'progress';
+  value === 'off' || value === 'latest' || value === 'latest-locked' || value === 'progress';
 
 /** Keeps the project's own pins (absent follows the user's default) and drops everything else it does not own. */
 export const normalizeProjectSettings = (settings?: Partial<ProjectSettings>): ProjectSettings => {

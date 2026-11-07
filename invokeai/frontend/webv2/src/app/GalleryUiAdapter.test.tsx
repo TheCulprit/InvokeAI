@@ -44,6 +44,7 @@ vi.mock('@features/gallery/react', () => ({
 }));
 vi.mock('@workbench/widgets/preview/livePreviewFollow', () => ({
   useLivePreviewFollow: () => ({
+    canFollowProgress: store.getSnapshot().activeProject.settings.viewerAutoSwitch !== 'latest-locked',
     sessions: [],
     gallerySessions: [],
     pinnedSessionId: null,
@@ -105,11 +106,11 @@ describe('Gallery live-follow adapter', () => {
     const galleryView = center.instanceIds.find((id) => id !== previewId())!;
     store.commands.widgets.select({ region: 'center', widgetId: galleryView });
 
-    owner.followProgressSession('run:2', { revealPreview: false });
+    owner.followProgressSession!('run:2', { revealPreview: false });
     expect(livePreviewFollow).toHaveBeenCalledExactlyOnceWith('run:2');
     expect(activeProject().widgetRegions.center.activeInstanceId).toBe(galleryView);
 
-    owner.followProgressSession('run:2', { revealPreview: true });
+    owner.followProgressSession!('run:2', { revealPreview: true });
     expect(activeProject().widgetRegions.center.activeInstanceId).toBe(previewId());
   });
 
@@ -124,7 +125,7 @@ describe('Gallery live-follow adapter', () => {
     expect(before.center).toEqual({ active: galleryView, ids: [galleryView] });
     expect(before.right.active).toBe(otherRailTab);
 
-    renderAdapter().followProgressSession('run:2', { revealPreview: true });
+    renderAdapter().followProgressSession!('run:2', { revealPreview: true });
 
     expect(regionSummary()).toEqual({
       ...before,
@@ -140,7 +141,7 @@ describe('Gallery live-follow adapter', () => {
     store.commands.widgets.setFloatingMode(preview, 'shaded');
     const before = regionSummary();
 
-    renderAdapter().followProgressSession('run:2', { revealPreview: true });
+    renderAdapter().followProgressSession!('run:2', { revealPreview: true });
 
     expect(activeProject().floatingWidgets?.[preview]?.mode).toBe('windowed');
     expect(regionSummary()).toEqual(before);
@@ -157,7 +158,7 @@ describe('Gallery live-follow adapter', () => {
       false
     );
 
-    renderAdapter().followProgressSession('run:2', { revealPreview: true });
+    renderAdapter().followProgressSession!('run:2', { revealPreview: true });
 
     expect(activeProject().widgetRegions.center.activeInstanceId).toBe(previewId());
   });
@@ -171,11 +172,24 @@ describe('Gallery live-follow adapter', () => {
     expect(modes).toEqual([true, false, false]);
   });
 
+  it('keeps the current view when following progress is disabled by Newest (locked)', () => {
+    const follow = renderAdapter().followProgressSession!;
+    const galleryView = activeProject().widgetRegions.center.instanceIds.find((id) => id !== previewId())!;
+    store.commands.widgets.select({ region: 'center', widgetId: galleryView });
+    store.commands.account.updateProjectPreferences({ viewerAutoSwitch: 'latest-locked' });
+
+    expect(renderAdapter().followProgressSession).toBeUndefined();
+    follow('run:2', { revealPreview: true });
+
+    expect(livePreviewFollow).not.toHaveBeenCalled();
+    expect(activeProject().widgetRegions.center.activeInstanceId).toBe(galleryView);
+  });
+
   it('ignores a follow retained across an account change', () => {
     const owner = renderAdapter();
 
     accountLifecycle.activate('gallery-adapter-test');
-    owner.followProgressSession('run:2', { revealPreview: true });
+    owner.followProgressSession!('run:2', { revealPreview: true });
     expect(livePreviewFollow).not.toHaveBeenCalled();
   });
 });

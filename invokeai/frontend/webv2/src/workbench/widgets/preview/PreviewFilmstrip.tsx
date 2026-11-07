@@ -145,7 +145,7 @@ const FilmstripLiveThumb = ({
   const progress = useItemProgress(session.backendItemId);
   const deviceLabel = useDeviceLabel(progress?.device);
   const percentage = getDeterminateProgressPercent(progress?.percentage);
-  const isRunning = session.state === 'running';
+  const canFollow = session.state === 'running' && (isPinned ? onUnpin !== undefined : onFollow !== undefined);
   const name =
     session.itemCount > 1
       ? t('widgets.gallery.progressSession', {
@@ -168,7 +168,7 @@ const FilmstripLiveThumb = ({
     status,
   ].join(' · ');
   const handleClick = useCallback(() => {
-    if (!isRunning) {
+    if (!canFollow) {
       return;
     }
     if (isPinned) {
@@ -176,7 +176,7 @@ const FilmstripLiveThumb = ({
     } else {
       onFollow?.(session.id);
     }
-  }, [isPinned, isRunning, onFollow, onUnpin, session.id]);
+  }, [canFollow, isPinned, onFollow, onUnpin, session.id]);
   // Keep the followed slot visible and restore preview focus when its thumb disappears.
   const thumbRef = useCallback(
     (node: HTMLElement | null) => {
@@ -209,9 +209,9 @@ const FilmstripLiveThumb = ({
       ref={thumbRef}
       as="button"
       aria-current={isFollowed || undefined}
-      aria-disabled={!isRunning}
+      aria-disabled={!canFollow}
       aria-label={label}
-      aria-pressed={isRunning ? isPinned : undefined}
+      aria-pressed={canFollow ? isPinned : undefined}
       borderColor={isFollowed ? 'accent.solid' : 'border.subtle'}
       borderWidth="2px"
       boxSize={size}
@@ -221,8 +221,8 @@ const FilmstripLiveThumb = ({
       overflow="hidden"
       position="relative"
       rounded="sm"
-      tabIndex={isRunning ? 0 : -1}
-      onClick={handleClick}
+      tabIndex={canFollow ? 0 : -1}
+      onClick={canFollow ? handleClick : undefined}
     >
       <StreamingImageFrame
         fit="cover"

@@ -25,7 +25,7 @@ describe('normalizeProjectSettings', () => {
   });
 
   it('keeps a saved Auto-switch mode and reads anything else as Off', () => {
-    for (const mode of ['off', 'latest', 'progress'] as const) {
+    for (const mode of ['off', 'latest', 'latest-locked', 'progress'] as const) {
       expect(normalizeProjectSettings({ viewerAutoSwitch: mode }).viewerAutoSwitch).toBe(mode);
     }
     expect(normalizeProjectSettings({ viewerAutoSwitch: 'always' as unknown as 'off' }).viewerAutoSwitch).toBe('off');

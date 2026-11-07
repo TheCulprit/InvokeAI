@@ -138,7 +138,7 @@ const GalleryProgressGrid = ({
   offsetTopPx: number;
   pinnedSessionId: string | null;
   liveFollowEnabled: boolean;
-  onFollow(id: string, options: { revealPreview: boolean }): void;
+  onFollow?: (id: string, options: { revealPreview: boolean }) => void;
   restoreFocus(): void;
 }) => {
   const { columns, tileSize, headerHeight, paddingBottom, rowCount, rowHeight } = layout;
@@ -202,7 +202,7 @@ const GalleryProgressTile = ({
   size: number;
   fit: GalleryThumbnailFit;
   selected: boolean;
-  onFollow(id: string, options: { revealPreview: boolean }): void;
+  onFollow?: (id: string, options: { revealPreview: boolean }) => void;
   restoreFocus(): void;
 }) => {
   const { t } = useTranslation();
@@ -226,9 +226,10 @@ const GalleryProgressTile = ({
         : percentage !== null
           ? `${percentage}%`
           : progress?.message || t('widgets.gallery.progressPreparing');
+  const canFollow = session.state === 'running' && onFollow !== undefined;
   const follow = useCallback(() => {
     if (session.state === 'running') {
-      onFollow(session.id, { revealPreview: true });
+      onFollow?.(session.id, { revealPreview: true });
     }
   }, [onFollow, session.id, session.state]);
   const buttonRef = useCallback(
@@ -260,9 +261,9 @@ const GalleryProgressTile = ({
         focusVisibleRing="inside"
         aria-label={`${label} · ${status}`}
         aria-pressed={isShownSelected}
-        aria-disabled={session.state !== 'running'}
+        aria-disabled={!canFollow}
         data-gallery-session-id={session.id}
-        tabIndex={session.state === 'running' ? 0 : -1}
+        tabIndex={canFollow ? 0 : -1}
         borderColor={isShownSelected ? 'accent.solid' : 'border.subtle'}
         borderWidth="2px"
         css={isShownSelected ? SELECTED_TILE_CSS : undefined}
@@ -273,7 +274,7 @@ const GalleryProgressTile = ({
         textAlign="start"
         position="relative"
         w={`${size}px`}
-        onClick={follow}
+        onClick={canFollow ? follow : undefined}
       >
         <StreamingImageFrame
           alignItems="center"

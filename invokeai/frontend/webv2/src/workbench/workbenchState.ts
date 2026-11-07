@@ -3596,17 +3596,16 @@ const reconcileDeletedGalleryBoard = (
 };
 
 /**
- * A deliberate selection settles the Preview on it: Auto-switch turns Off in the same step, so the control reads Off
- * at once and later results stay in the Gallery. With Auto-switch already Off only the selection changes.
+ * A deliberate selection pauses Auto-switch unless the user has locked it to Newest.
  */
-const updateGalleryValuesAndStopAutoSwitch = (
+const updateGalleryValuesForSelection = (
   state: WorkbenchState,
   getValues: (values: Record<string, unknown>) => Record<string, unknown>,
   projectId = state.activeProjectId
 ): WorkbenchState =>
   updateProjectById(state, projectId, (project) =>
     updateProjectWidgetValues(
-      project.settings.viewerAutoSwitch === 'off'
+      project.settings.viewerAutoSwitch === 'off' || project.settings.viewerAutoSwitch === 'latest-locked'
         ? project
         : { ...project, settings: { ...project.settings, viewerAutoSwitch: 'off' } },
       'gallery',
@@ -5782,7 +5781,7 @@ const reduceWorkbenchAction = (
       );
     }
     case 'selectGalleryItem': {
-      return updateGalleryValuesAndStopAutoSwitch(
+      return updateGalleryValuesForSelection(
         state,
         (values) => {
           // A selection navigated within its own board has no known page there; Preview locates it.
@@ -5831,7 +5830,7 @@ const reduceWorkbenchAction = (
       );
     }
     case 'toggleGalleryItemInSelection': {
-      return updateGalleryValuesAndStopAutoSwitch(
+      return updateGalleryValuesForSelection(
         state,
         (values) => {
           const itemKey = toGalleryItemKey(action.item);
@@ -5900,7 +5899,7 @@ const reduceWorkbenchAction = (
       );
     }
     case 'setGalleryMultiSelection': {
-      return updateGalleryValuesAndStopAutoSwitch(
+      return updateGalleryValuesForSelection(
         state,
         (values) => {
           const semanticKey = gallerySemanticReferenceKey(parseGallerySemanticReference(values.semanticImageQuery));
@@ -5935,7 +5934,7 @@ const reduceWorkbenchAction = (
       const updateValues = (values: Record<string, unknown>) => ({ ...values, compareImage: action.image });
 
       return action.image
-        ? updateGalleryValuesAndStopAutoSwitch(state, updateValues, action.projectId)
+        ? updateGalleryValuesForSelection(state, updateValues, action.projectId)
         : updateGalleryValues(state, updateValues, action.projectId);
     }
     case 'selectGalleryBoard': {

@@ -30,6 +30,7 @@ vi.mock('@features/gallery/react', () => ({
 }));
 vi.mock('@workbench/widgets/preview/livePreviewFollow', () => ({
   useLivePreviewFollow: () => ({
+    canFollowProgress: true,
     sessions: [],
     gallerySessions: [],
     pinnedSessionId: null,

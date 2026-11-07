@@ -1,6 +1,7 @@
 import '@fontsource/inter/index.css';
 import type * as GalleryBackendModule from '@features/gallery/data/backend';
 import type * as IdentityModule from '@features/identity';
+import type { ViewerAutoSwitchMode } from '@workbench/settings/contracts';
 import type { WidgetViewProps } from '@workbench/widgetContracts';
 import type * as WorkbenchContextModule from '@workbench/WorkbenchContext';
 
@@ -72,6 +73,7 @@ void i18n.use(initReactI18next).init({
             },
           },
           preview: {
+            autoSwitchLatestLocked: 'Newest (locked)',
             details: 'Details',
             editOnCanvas: 'Edit on Canvas',
             editThisImage: 'Edit this image',
@@ -96,7 +98,7 @@ void i18n.use(initReactI18next).init({
 const state = vi.hoisted(() => ({
   actionItem: null as null | Record<string, unknown>,
   density: 'full' as 'compact' | 'full' | 'minimal' | null,
-  viewerAutoSwitch: 'progress' as 'latest' | 'off' | 'progress',
+  viewerAutoSwitch: 'progress' as ViewerAutoSwitchMode,
   zoom: null as null | {
     fitPercent: number | null;
     isZoomed: boolean;
@@ -274,16 +276,17 @@ afterEach(async () => {
 });
 
 describe('preview header Auto-switch', () => {
-  it('offers the staging bar modes and writes the chosen one, letting go of a pinned session', async () => {
+  it('offers Newest (locked) and writes the chosen mode, letting go of a pinned session', async () => {
     await render();
 
     await settle(() => button('Auto-switch: In progress').click());
-    const option = (name: string) => page.getByRole('menuitemradio', { name });
+    const option = (name: string) => page.getByRole('menuitemradio', { exact: true, name });
     await expect.element(option('In progress')).toHaveAttribute('aria-checked', 'true');
     await expect.element(option('Off')).toHaveAttribute('aria-checked', 'false');
-    await option('Newest').click();
+    await expect.element(option('Newest')).toHaveAttribute('aria-checked', 'false');
+    await option('Newest (locked)').click();
 
-    expect(updateProjectPreferences).toHaveBeenCalledExactlyOnceWith({ viewerAutoSwitch: 'latest' });
+    expect(updateProjectPreferences).toHaveBeenCalledExactlyOnceWith({ viewerAutoSwitch: 'latest-locked' });
     expect(showAll).toHaveBeenCalledOnce();
   });
 
@@ -322,6 +325,7 @@ describe('preview header Auto-switch', () => {
       ['off', 'Off'],
       ['progress', 'In progress'],
       ['latest', 'Newest'],
+      ['latest-locked', 'Newest (locked)'],
     ] as const) {
       state.viewerAutoSwitch = mode;
       await render();
@@ -329,16 +333,16 @@ describe('preview header Auto-switch', () => {
 
       // The menu shows each mode with the icon the trigger takes for it, so the mapping can be learned.
       await settle(() => button(`Auto-switch: ${label}`).click());
-      const itemIcon = [...page.getByRole('menuitemradio', { name: label }).element().querySelectorAll('svg')].find(
-        (svg) => !svg.closest('[data-part="item-indicator"]')
-      );
+      const itemIcon = [
+        ...page.getByRole('menuitemradio', { exact: true, name: label }).element().querySelectorAll('svg'),
+      ].find((svg) => !svg.closest('[data-part="item-indicator"]'));
       expect(glyph(itemIcon)).toBe(icons.get(mode));
       await settle(() => root?.unmount());
       host?.remove();
     }
 
     // Off reads by its shape, not by dimming the icon the other modes share.
-    expect(new Set(icons.values()).size).toBe(3);
+    expect(new Set(icons.values()).size).toBe(4);
   });
 
   it('is square and sized like the icon button beside it', async () => {

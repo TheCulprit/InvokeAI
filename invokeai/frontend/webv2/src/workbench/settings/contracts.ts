@@ -41,10 +41,10 @@ export interface ProjectSettings {
 }
 
 /**
- * `latest`: each finished result takes the selection. `progress`: the same, and live frames show while it runs.
- * `off`: results land in the Gallery only (one still takes an empty selection). The canvas staging bar's values.
+ * `latest`: each finished result takes the selection. `latest-locked`: keep following results while browsing.
+ * `progress`: follow finished results and live frames. `off`: leave the selection alone unless it is empty.
  */
-export type ViewerAutoSwitchMode = 'off' | 'latest' | 'progress';
+export type ViewerAutoSwitchMode = 'off' | 'latest' | 'latest-locked' | 'progress';
 
 /** {@link ProjectSettings} with every layered flag resolved: project pin, then the user's default, then built-in. */
 export type EffectiveProjectSettings = Required<ProjectSettings>;

@@ -2973,6 +2973,23 @@ describe('preview keyboard navigation boundary', () => {
     expect(mocks.commands.gallery.selectItem).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps Newest locked when a running session is selected or reached by navigation', async () => {
+    mocks.project.settings.viewerAutoSwitch = 'latest-locked';
+    mocks.project.queue.items = [queueItem];
+    mocks.useActiveProgressTarget.mockReturnValue({ itemIndex: 1, queueItemId: 'queue-item-live' });
+    setGalleryValues({ selectedImage: legacyImage('newest', '2026-07-21T00:00:00.000Z'), selectedImageName: 'newest' });
+
+    await render();
+    const thumb = host!.querySelector<HTMLButtonElement>('[data-preview-live-thumb="queue-item-live:1"]');
+    expect(thumb?.getAttribute('aria-disabled')).toBe('true');
+    expect(thumb?.tabIndex).toBe(-1);
+    await pressArrow('ArrowLeft');
+    await act(() => followControls.follow('queue-item-live:1'));
+
+    expect(mocks.commands.account.updateProjectPreferences).not.toHaveBeenCalled();
+    expect(followControls.pinnedSessionId).toBeNull();
+  });
+
   it('steps right off the followed session onto the first saved item, and never onto waiting slots', async () => {
     mocks.project.queue.items = [{ ...queueItem, backendItemIds: [1, 2, 3], completedBackendItemIds: [1, 2] }];
     mocks.project.settings.viewerAutoSwitch = 'progress';

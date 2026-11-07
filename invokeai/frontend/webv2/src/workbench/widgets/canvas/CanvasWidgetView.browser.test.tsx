@@ -78,9 +78,6 @@ vi.mock('@workbench/WorkbenchContext', async (importOriginal) => ({
   useWorkbenchQueries: () => harness.store!.queries,
   useWorkbenchSubscription: () => harness.store!.subscribe,
 }));
-vi.mock('@workbench/useCanvasProjectMutationDispatch', () => ({
-  useCanvasProjectMutationDispatch: () => () => undefined,
-}));
 vi.mock('./engineStoreHooks', async (importOriginal) => ({
   ...(await importOriginal<typeof EngineStoreHooks>()),
   useCanvasOperation: () => null,
@@ -137,6 +134,28 @@ const candidate: CanvasStagingCandidateContract = {
   width: 64,
 };
 
+const attachSurface = async (engine: CanvasEngine) => {
+  const screen = document.createElement('canvas');
+  const overlay = document.createElement('canvas');
+  for (const canvas of [screen, overlay]) {
+    Object.assign(canvas.style, { height: '300px', left: '0', position: 'fixed', top: '0', width: '300px' });
+    host!.append(canvas);
+  }
+  await act(() => engine.surface.attach(screen, overlay));
+  return { overlay, screen };
+};
+
+const solidImage = (color: string): Promise<Blob> => {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  context.fillStyle = color;
+  context.fillRect(0, 0, 64, 64);
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not encode test image'))))
+  );
+};
+
 /**
  * Stages the first image of a three-image batch whose remaining images are `status`; unstaged, the surface is live.
  * `selectedLayer` starts the document with that layer selected, alone or among `nodes`; `beforeRender` sees the
@@ -147,6 +166,7 @@ const renderView = async (
   {
     beforeRender,
     domRaster = false,
+    imageResolver = () => Promise.resolve(new Blob()),
     nodes,
     selectedLayer,
     staged = true,
@@ -154,6 +174,7 @@ const renderView = async (
     beforeRender?: (engine: CanvasEngine) => void;
     /** Real Canvas2D pixels, for a test that attaches a surface and draws. */
     domRaster?: boolean;
+    imageResolver?: (imageName: string) => Promise<Blob>;
     nodes?: CanvasNodeContract[];
     selectedLayer?: CanvasLayerContract;
     staged?: boolean;
@@ -199,7 +220,7 @@ const renderView = async (
   harness.engine = createCanvasEngine({
     backend: domRaster ? createDomRasterBackend() : createTestStubRasterBackend(),
     ensureProjectOnServer: () => Promise.resolve(),
-    imageResolver: () => Promise.resolve(new Blob()),
+    imageResolver,
     mutationPort: createCanvasProjectMutationPort(store, projectId),
     projectId,
     reportError: () => undefined,
@@ -220,20 +241,23 @@ const renderView = async (
     },
     hotkeys: { register: () => () => undefined },
   };
-  await act(() =>
-    root!.render(
-      <I18nextProvider i18n={i18n}>
-        <ChakraProvider value={system}>
-          <QueryClientProvider client={new QueryClient()}>
-            <CanvasWidgetView
-              {...({ instance: activeProject().widgetInstances.canvas, runtime } as unknown as WidgetViewProps)}
-            />
-          </QueryClientProvider>
-        </ChakraProvider>
-      </I18nextProvider>
-    )
-  );
-  return { commandHandlers, projectId, store };
+  const client = new QueryClient();
+  const rerender = () =>
+    act(() =>
+      root!.render(
+        <I18nextProvider i18n={i18n}>
+          <ChakraProvider value={system}>
+            <QueryClientProvider client={client}>
+              <CanvasWidgetView
+                {...({ instance: activeProject().widgetInstances.canvas, runtime } as unknown as WidgetViewProps)}
+              />
+            </QueryClientProvider>
+          </ChakraProvider>
+        </I18nextProvider>
+      )
+    );
+  await rerender();
+  return { commandHandlers, projectId, rerender, store };
 };
 
 describe('CanvasWidgetView accept and stop', () => {
@@ -266,6 +290,53 @@ describe('CanvasWidgetView accept and stop', () => {
 describe('CanvasWidgetView editing while results are staged', () => {
   const background = layerContract('background', 'raster');
 
+  it('shows the underlying canvas without the mask when the eye hides a staged result', async () => {
+    const mask = layerContract('mask', 'inpaint_mask', {
+      mask: {
+        bitmap: { height: 64, imageName: 'mask.png', width: 64 },
+        fill: { color: '#ff0000', style: 'solid' },
+      },
+    });
+    const original = layerContract('original', 'raster', {
+      source: { image: { height: 64, imageName: 'original.png', width: 64 }, type: 'image' },
+    });
+    const colors: Record<string, string> = {
+      [candidate.imageName]: '#0000ff',
+      'mask.png': '#ffffff',
+      'original.png': '#00ff00',
+    };
+    const { rerender } = await renderView('completed', {
+      domRaster: true,
+      imageResolver: (name) => solidImage(colors[name]!),
+      nodes: [mask, original],
+      selectedLayer: mask,
+    });
+    const engine = harness.engine!;
+    const { screen } = await attachSurface(engine);
+    const viewport = engine.viewport.getViewport();
+    const centerPixel = () => {
+      const { x, y } = viewport.documentToScreen({ x: 32, y: 32 });
+      const dpr = viewport.getDpr();
+      return [...screen.getContext('2d')!.getImageData(Math.round(x * dpr), Math.round(y * dpr), 1, 1).data];
+    };
+
+    await expect.poll(centerPixel).toEqual([0, 0, 255, 255]);
+    await page.getByRole('button', { exact: true, name: 'Hide staged result preview' }).click();
+    await rerender();
+    await expect.poll(centerPixel).toEqual([0, 255, 0, 255]);
+
+    await page.getByRole('button', { exact: true, name: 'Show staged result preview' }).click();
+    await rerender();
+    await expect.poll(centerPixel).toEqual([0, 0, 255, 255]);
+
+    await page.getByRole('button', { exact: true, name: 'Hide staged result preview' }).click();
+    await rerender();
+    await page.getByRole('button', { exact: true, name: 'Discard' }).click();
+    await rerender();
+    await expect.poll(centerPixel).toEqual([255, 0, 0, 255]);
+    engine.surface.detach();
+  });
+
   it('leaves the tools to the user while the batch runs: nothing is parked on View', async () => {
     await renderView('running', { selectedLayer: background });
 
@@ -279,13 +350,7 @@ describe('CanvasWidgetView editing while results are staged', () => {
     const paint = layerContract('paint', 'raster');
     await renderView('running', { domRaster: true, selectedLayer: paint });
     const engine = harness.engine!;
-    const screen = document.createElement('canvas');
-    const overlay = document.createElement('canvas');
-    for (const canvas of [screen, overlay]) {
-      Object.assign(canvas.style, { height: '300px', left: '0', position: 'fixed', top: '0', width: '300px' });
-      host!.append(canvas);
-    }
-    await act(() => engine.surface.attach(screen, overlay));
+    const { overlay } = await attachSurface(engine);
     await act(() => engine.tools.setTool('brush'));
     const pointer = (type: string, x: number, buttons: number) =>
       new PointerEvent(type, { bubbles: true, buttons, clientX: x, clientY: 150, pointerId: 1, pointerType: 'mouse' });

@@ -55,7 +55,7 @@ export interface SamPreviewState {
 
 /** Owns render-preview surfaces and monotonic async publication guards. */
 export class PreviewStateController {
-  private staged: StagedPreviewState | null = null;
+  private staged: StagedPreviewState | 'hidden' | null = null;
   private stagedToken = 0;
   private stagedRegions: readonly StagedRegionState[] = [];
   private readonly filters = new Map<string, FilterPreviewState>();
@@ -64,7 +64,11 @@ export class PreviewStateController {
   private sam: SamPreviewState | null = null;
 
   getStaged(): StagedPreviewState | null {
-    return this.staged;
+    return this.staged === 'hidden' ? null : this.staged;
+  }
+
+  isStagedReviewActive(): boolean {
+    return this.staged !== null;
   }
   nextStagedToken(): number {
     return ++this.stagedToken;
@@ -80,10 +84,18 @@ export class PreviewStateController {
     return true;
   }
   clearStaged(): boolean {
+    return this.replaceStagedWithoutSurface(null);
+  }
+
+  hideStaged(): boolean {
+    return this.replaceStagedWithoutSurface('hidden');
+  }
+
+  private replaceStagedWithoutSurface(next: 'hidden' | null): boolean {
     this.stagedToken += 1;
-    const hadPreview = this.staged !== null;
-    this.staged = null;
-    return hadPreview;
+    const changed = this.staged !== next;
+    this.staged = next;
+    return changed;
   }
 
   getStagedRegions(): readonly StagedRegionState[] {

@@ -1,6 +1,6 @@
 /**
- * Prefer the visible finished candidate, then the selected placeholder's live progress frame, otherwise no
- * preview. Both land at the rect pinned at submission, so moving the bbox mid-run never moves them.
+ * A finished candidate keeps comparison active while its preview is hidden. For a selected placeholder, show its
+ * live progress frame when available. All preview pixels land at the rect pinned at submission.
  */
 
 import type { CanvasPlacementContract, Rect, StagedPreviewInput } from '@workbench/canvas-engine/api';
@@ -23,8 +23,10 @@ export const selectStagedPreviewSource = ({
   progressRect,
   selectedCandidate,
 }: StagedPreviewSelection): StagedPreviewInput | null => {
-  if (isVisible && selectedCandidate) {
-    return { imageName: selectedCandidate.imageName, placement: selectedCandidate.placement };
+  if (selectedCandidate) {
+    return isVisible
+      ? { imageName: selectedCandidate.imageName, placement: selectedCandidate.placement }
+      : { hidden: true };
   }
   if (progressRect && progressImage && progressRect.width > 0 && progressRect.height > 0) {
     // Progress frames are low-res latents of the submitted region; scale to fill it.
@@ -37,6 +39,9 @@ export const selectStagedPreviewSource = ({
 export const stagedPreviewKey = (source: StagedPreviewInput | null): string => {
   if (source === null) {
     return 'none';
+  }
+  if ('hidden' in source) {
+    return 'hidden';
   }
   const { placement } = source;
   const rect = `${placement.x}:${placement.y}:${placement.width}:${placement.height}:${placement.opacity}`;

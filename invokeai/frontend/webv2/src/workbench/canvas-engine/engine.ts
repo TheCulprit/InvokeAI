@@ -1529,15 +1529,15 @@ export const createCanvasEngine = (opts: CanvasEngineOptions): CanvasEngineCoreC
   /** Whether the pointer gesture in progress edits a mask or a region, which a shown staged preview otherwise hides. */
   let gestureEditsStagingHiddenStack = false;
   /**
-   * Set once per gesture, so its pointer moves read a flag. While a preview is shown, setting and clearing it each
-   * repaint in full: the stacks show above the preview, then hide again.
+   * Set once per gesture, so its pointer moves read a flag. During staged review, setting and clearing it each
+   * repaint in full: the stacks show while the gesture edits them, then hide again.
    */
   const setGestureEditsStagingHiddenStack = (edits: boolean): void => {
     if (edits === gestureEditsStagingHiddenStack) {
       return;
     }
     gestureEditsStagingHiddenStack = edits;
-    if (renderController.previews.getStaged()) {
+    if (renderController.previews.isStagedReviewActive()) {
       scheduler.invalidate({ all: true });
     }
   };

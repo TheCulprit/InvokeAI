@@ -15989,6 +15989,7 @@ describe('masks while a result is staged', () => {
         regionOverlays: options?.regionOverlays,
       };
     };
+    const drawnPreview = () => composite.mock.calls.at(-1)?.[4]?.stagedPreview;
     const showPreview = async (): Promise<void> => {
       update({ stagingArea: { ...canvas.stagingArea, isVisible: true, pendingImages: [candidate] } });
       engine.previews.setStagedPreview({ imageName: candidate.imageName, placement: candidate.placement });
@@ -16013,17 +16014,25 @@ describe('masks while a result is staged', () => {
       composite.mockRestore();
       engine.lifecycle.dispose();
     };
-    return { dispose, engine, expectPressHidden, frame, key, overlay, select, showPreview, update, useTool };
+    return {
+      dispose,
+      drawnPreview,
+      engine,
+      expectPressHidden,
+      frame,
+      key,
+      overlay,
+      select,
+      showPreview,
+      update,
+      useTool,
+    };
   };
 
   it('hides masks and region tints under a shown preview, showing them only while a gesture edits a mask', async () => {
     const h = setup();
     const { frame, overlay } = h;
     expect(frame()).toEqual({ ...MASKED, full: 1 });
-
-    // A staged candidate whose preview is off hides nothing, so staging it repaints nothing either.
-    h.update({ stagingArea: { ...makeCanvas(makeDoc()).stagingArea, isVisible: false, pendingImages: [candidate] } });
-    expect(frame().drawn).toBeUndefined();
 
     // Showing it hides masks and the region tint, so the result reads as it would be accepted.
     await h.showPreview();
@@ -16082,7 +16091,7 @@ describe('masks while a result is staged', () => {
       expect(after.full).toBe(tool === 'view' ? 1 : 0);
     }
 
-    // Without a shown preview the masks always draw, and a stroke on one adds no full repaints.
+    // Outside staged review the masks always draw, and a stroke on one adds no full repaints.
     h.engine.previews.setStagedPreview(null);
     expect(frame()).toEqual({ ...MASKED, full: 1 });
     h.useTool('brush');
@@ -16091,6 +16100,28 @@ describe('masks while a result is staged', () => {
     expect(frame()).toEqual({ ...MASKED, full: 0 });
     overlay.fire('pointerup', pointerAt(15, 15, { buttons: 0 }));
     expect(frame()).toMatchObject(MASKED);
+    h.dispose();
+  });
+
+  it('keeps the underlying canvas untinted while a finished result preview is hidden', async () => {
+    const h = setup();
+    await h.showPreview();
+    expect(h.frame()).toEqual({ ...UNMASKED, full: 1 });
+    expect(h.drawnPreview()).not.toBeNull();
+
+    h.engine.previews.setStagedPreview({ hidden: true });
+    expect(h.frame()).toEqual({ ...UNMASKED, full: 1 });
+    expect(h.drawnPreview()).toBeNull();
+
+    h.select('m');
+    h.useTool('brush');
+    h.overlay.fire('pointerdown', pointerAt(5, 5));
+    expect(h.frame()).toEqual({ ...MASKED, full: 1 });
+    h.overlay.fire('pointerup', pointerAt(5, 5, { buttons: 0 }));
+    expect(h.frame()).toEqual({ ...UNMASKED, full: 1 });
+
+    h.engine.previews.setStagedPreview(null);
+    expect(h.frame()).toEqual({ ...MASKED, full: 1 });
     h.dispose();
   });
 

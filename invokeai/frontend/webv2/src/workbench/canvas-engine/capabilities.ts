@@ -880,10 +880,12 @@ export interface StagedPreviewPlacement extends Rect {
 /**
  * A staged preview always lands at absolute document coordinates pinned at submission: a candidate at its placement,
  * a progress frame (scaled to fill) at the rect its run was submitted with. Later bbox edits never move either.
+ * A hidden candidate keeps mask overlays suppressed for comparison without displaying its pixels.
  */
 export type StagedPreviewInput =
   | { imageName: string; placement: StagedPreviewPlacement }
-  | { dataUrl: string; placement: StagedPreviewPlacement };
+  | { dataUrl: string; placement: StagedPreviewPlacement }
+  | { hidden: true };
 /** One pending result's landing rect in document space, for the staged-region overlay. */
 export interface StagedRegion {
   readonly rect: Rect;

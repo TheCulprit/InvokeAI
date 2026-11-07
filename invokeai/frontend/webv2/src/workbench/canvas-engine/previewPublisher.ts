@@ -133,7 +133,10 @@ export const createPreviewPublisher = (deps: CreatePreviewPublisherDeps): Previe
   };
 
   /** Decodes a staged preview (a candidate via the resolver, a progress frame via the backend seam) at its rect. */
-  const decodeStagedPreview = async (input: StagedPreviewInput, isCurrent: () => boolean): Promise<DecodedPreview> => {
+  const decodeStagedPreview = async (
+    input: Exclude<StagedPreviewInput, { hidden: true }>,
+    isCurrent: () => boolean
+  ): Promise<DecodedPreview> => {
     const placement = { ...input.placement };
     if ('imageName' in input) {
       return { ...(await decodeNamedImage(input.imageName, true, isCurrent)), placement };
@@ -232,6 +235,16 @@ export const createPreviewPublisher = (deps: CreatePreviewPublisherDeps): Previe
       if (input === null) {
         clearStagedPreview();
         return;
+      }
+      if ('hidden' in input) {
+        if (previews.hideStaged()) {
+          deps.invalidateAll();
+        }
+        return;
+      }
+      // A progress frame does not carry the finished candidate's comparison state while it decodes.
+      if ('dataUrl' in input && previews.isStagedReviewActive() && !previews.getStaged()) {
+        clearStagedPreview();
       }
       const token = previews.nextStagedToken();
       decodeStagedPreview(input, () => previews.isStagedTokenCurrent(token))

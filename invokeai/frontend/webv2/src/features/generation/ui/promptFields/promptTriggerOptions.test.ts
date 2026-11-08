@@ -36,10 +36,10 @@ describe('getPromptTriggerOptions', () => {
 
   it('tags every option with what it inserts', () => {
     expect(build().map((option) => [option.kind, option.value])).toEqual([
-      ['wildcard', '__colours__'],
       ['phrase', 'jugg'],
       ['phrase', 'sks'],
       ['embedding', '<easynegative>'],
+      ['wildcard', '__colours__'],
     ]);
   });
 

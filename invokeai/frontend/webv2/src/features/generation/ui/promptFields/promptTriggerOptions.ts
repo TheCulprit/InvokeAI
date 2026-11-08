@@ -52,10 +52,6 @@ export const getPromptTriggerOptions = ({
 }): PromptTriggerOption[] => {
   const options: PromptTriggerOption[] = [];
 
-  for (const wildcard of wildcards) {
-    options.push({ group: wildcardsLabel, kind: 'wildcard', label: wildcard.name, value: `__${wildcard.name}__` });
-  }
-
   for (const phrase of getTriggerPhrases(selectedModel)) {
     options.push({ group: selectedModel?.name ?? mainModelLabel, kind: 'phrase', label: phrase, value: phrase });
   }
@@ -81,6 +77,10 @@ export const getPromptTriggerOptions = ({
         });
       }
     }
+  }
+
+  for (const wildcard of wildcards) {
+    options.push({ group: wildcardsLabel, kind: 'wildcard', label: wildcard.name, value: `__${wildcard.name}__` });
   }
 
   const seen = new Set<string>();

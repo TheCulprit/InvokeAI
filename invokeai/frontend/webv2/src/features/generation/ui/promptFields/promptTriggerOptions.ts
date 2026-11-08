@@ -52,10 +52,6 @@ export const getPromptTriggerOptions = ({
 }): PromptTriggerOption[] => {
   const options: PromptTriggerOption[] = [];
 
-  for (const phrase of getTriggerPhrases(selectedModel)) {
-    options.push({ group: selectedModel?.name ?? mainModelLabel, kind: 'phrase', label: phrase, value: phrase });
-  }
-
   for (const lora of loras) {
     if (!lora.isEnabled) {
       continue;
@@ -64,6 +60,10 @@ export const getPromptTriggerOptions = ({
     for (const phrase of getTriggerPhrases(lora.model)) {
       options.push({ group: lora.model.name, kind: 'phrase', label: phrase, value: phrase });
     }
+  }
+
+  for (const phrase of getTriggerPhrases(selectedModel)) {
+    options.push({ group: selectedModel?.name ?? mainModelLabel, kind: 'phrase', label: phrase, value: phrase });
   }
 
   if (selectedModel) {
@@ -113,17 +113,20 @@ export const filterPromptTriggerOptionsByKind = (
   allowedKinds?: ReadonlySet<PromptTriggerKind>
 ): PromptTriggerOption[] => (allowedKinds ? options.filter((option) => allowedKinds.has(option.kind)) : [...options]);
 
-const KIND_BY_TRIGGER_KEY: Record<PromptTriggerKey, PromptTriggerKind> = { '<': 'embedding', _: 'wildcard' };
+const KINDS_BY_TRIGGER_KEY: Record<PromptTriggerKey, ReadonlySet<PromptTriggerKind>> = {
+  '<': new Set(['phrase', 'embedding']),
+  _: new Set(['wildcard']),
+};
 
 export const getInlineTriggerOptions = (
   options: readonly PromptTriggerOption[],
   key: PromptTriggerKey,
   search: string
 ): PromptTriggerOption[] => {
-  const kind = KIND_BY_TRIGGER_KEY[key];
+  const kinds = KINDS_BY_TRIGGER_KEY[key];
   const query = search.trim().toLowerCase();
 
-  return options.filter((option) => option.kind === kind && (!query || option.label.toLowerCase().includes(query)));
+  return options.filter((option) => kinds.has(option.kind) && (!query || option.label.toLowerCase().includes(query)));
 };
 
 export const groupPromptTriggerOptions = (options: readonly PromptTriggerOption[]): PromptTriggerOptionGroup[] =>

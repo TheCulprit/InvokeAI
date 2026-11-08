@@ -12,8 +12,8 @@ import {
 const OPTIONS: PromptTriggerOption[] = [
   { group: 'Wildcards', kind: 'wildcard', label: 'colours', value: '__colours__' },
   { group: 'Wildcards', kind: 'wildcard', label: 'moods', value: '__moods__' },
-  { group: 'Compatible embeddings', kind: 'embedding', label: 'easynegative', value: '<easynegative>' },
   { group: 'My LoRA', kind: 'phrase', label: 'a photo of sks', value: 'a photo of sks' },
+  { group: 'Compatible embeddings', kind: 'embedding', label: 'easynegative', value: '<easynegative>' },
 ];
 
 describe('getPromptTriggerOptions', () => {
@@ -36,8 +36,8 @@ describe('getPromptTriggerOptions', () => {
 
   it('tags every option with what it inserts', () => {
     expect(build().map((option) => [option.kind, option.value])).toEqual([
-      ['phrase', 'jugg'],
       ['phrase', 'sks'],
+      ['phrase', 'jugg'],
       ['embedding', '<easynegative>'],
       ['wildcard', '__colours__'],
     ]);
@@ -52,20 +52,15 @@ describe('getPromptTriggerOptions', () => {
 });
 
 describe('getInlineTriggerOptions', () => {
-  // The trigger restricts completion kind: < for embeddings, __ for wildcards.
   it('offers only wildcards for `__`', () => {
     expect(getInlineTriggerOptions(OPTIONS, '_', '').map((option) => option.label)).toEqual(['colours', 'moods']);
   });
 
-  it('offers only embeddings for `<`', () => {
-    expect(getInlineTriggerOptions(OPTIONS, '<', '').map((option) => option.label)).toEqual(['easynegative']);
-  });
-
-  // They belong to no delimiter, and stay reachable through the `+` button.
-  it('offers trigger phrases under neither', () => {
-    const everything = [...getInlineTriggerOptions(OPTIONS, '_', ''), ...getInlineTriggerOptions(OPTIONS, '<', '')];
-
-    expect(everything.some((option) => option.kind === 'phrase')).toBe(false);
+  it('offers trigger phrases before embeddings for `<`', () => {
+    expect(getInlineTriggerOptions(OPTIONS, '<', '').map((option) => option.label)).toEqual([
+      'a photo of sks',
+      'easynegative',
+    ]);
   });
 
   it('narrows by label', () => {
@@ -88,6 +83,6 @@ describe('filterPromptTriggerOptionsByKind', () => {
   it('keeps phrases and embeddings while excluding wildcards for a negative prompt', () => {
     expect(
       filterPromptTriggerOptionsByKind(OPTIONS, new Set(['embedding', 'phrase'])).map((option) => option.kind)
-    ).toEqual(['embedding', 'phrase']);
+    ).toEqual(['phrase', 'embedding']);
   });
 });

@@ -161,6 +161,7 @@ export const PositivePromptField = ({
     keys: POSITIVE_PROMPT_TRIGGER_KEYS,
     loras,
     onChange: commitPromptChange,
+    projectId,
     selectedModel,
   });
 
@@ -323,7 +324,6 @@ export const PositivePromptField = ({
           textareaRef={handleTextareaRef}
           title={isViewingMerged ? t('widgets.generate.promptTemplates.editAuthored') : undefined}
           value={isViewingMerged ? effectivePositivePrompt : draftValue}
-          onBlur={autocomplete.close}
           onChange={handlePromptChange}
           onClick={isViewingMerged ? exitViewMode : handlePromptClick}
           onKeyDown={handlePromptKeyDown}

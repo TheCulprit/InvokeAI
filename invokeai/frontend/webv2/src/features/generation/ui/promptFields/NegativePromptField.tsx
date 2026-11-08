@@ -88,6 +88,7 @@ export const NegativePromptField = ({
     keys: NEGATIVE_PROMPT_TRIGGER_KEYS,
     loras,
     onChange: commitPromptChange,
+    projectId,
     selectedModel,
   });
 
@@ -197,7 +198,6 @@ export const NegativePromptField = ({
         textareaRef={handleTextareaRef}
         title={isViewingMerged ? t('widgets.generate.promptTemplates.editAuthored') : undefined}
         value={templateChunks ? templateChunks.join('') : draftValue}
-        onBlur={autocomplete.close}
         onChange={handlePromptChange}
         onClick={isViewingMerged ? exitViewMode : handlePromptClick}
         onKeyDown={handlePromptKeyDown}

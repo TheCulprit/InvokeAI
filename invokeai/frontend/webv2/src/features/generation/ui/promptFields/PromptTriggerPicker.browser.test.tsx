@@ -115,13 +115,29 @@ afterEach(async () => {
 });
 
 describe('the caret autocomplete', () => {
-  it('offers embeddings for `<` and wildcards for `__`, and phrases for neither', async () => {
+  it('offers trigger phrases and embeddings for `<` and wildcards for `__`', async () => {
     await type('a photo of <');
 
-    expect(optionLabels()).toEqual(['easynegative']);
+    expect(textarea().value).toBe('a photo of ');
+    expect(document.activeElement).toBe(textarea());
+    expect(optionLabels()).toEqual(['jugg', 'easynegative']);
 
+    await press('easyx');
+    expect(optionLabels()).toEqual([]);
+    await press('{Backspace}');
+    expect(optionLabels()).toEqual(['easynegative']);
+    expect(textarea().value).toBe('a photo of easy');
+    await press('{Enter}');
+    expect(textarea().value).toBe('a photo of <easynegative>');
+
+    await press('<');
+    expect(optionLabels()).toEqual(['jugg', 'easynegative']);
+    expect(listbox()?.querySelector('[aria-selected="true"]')?.textContent).toBe('easynegative');
+    await press('ju');
     await press('{Escape}');
-    await type('__');
+    expect(document.activeElement).toBe(textarea());
+    expect(textarea().value).toBe('a photo of <easynegative>ju');
+    await press('<__');
 
     expect(optionLabels()).toEqual(['colors', 'moods']);
   });

@@ -6,10 +6,9 @@ import type {
 import type { MouseEvent } from 'react';
 
 import { Box, Portal, Stack, Text } from '@chakra-ui/react';
-import { groupPromptTriggerOptions } from '@features/generation/ui/promptFields/promptTriggerOptions';
 import { PROMPT_TRIGGER_AUTOCOMPLETE_SCROLL_PROPS } from '@features/generation/ui/promptFields/useDismissOnViewportChange';
 import { MiddleTruncate } from '@platform/ui/MiddleTruncate';
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const LIST_WIDTH_PX = 260;
@@ -21,34 +20,20 @@ const OPTION_HOVER_CSS = { bg: 'bg.hover' };
 export const PromptTriggerAutocomplete = ({
   activeIndex,
   caretRect,
+  groups,
   listboxId,
   onSelect,
-  options,
   optionIdPrefix,
 }: {
   activeIndex: number;
   caretRect: CaretRect;
+  groups: readonly PromptTriggerOptionGroup[];
   listboxId: string;
   optionIdPrefix: string;
-  options: readonly PromptTriggerOption[];
   onSelect: (option: PromptTriggerOption) => void;
 }) => {
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement | null>(null);
-  const groups = useMemo(
-    () =>
-      groupPromptTriggerOptions(options).reduce<(PromptTriggerOptionGroup & { startIndex: number })[]>(
-        (numbered, group) => {
-          const previous = numbered[numbered.length - 1];
-
-          numbered.push({ ...group, startIndex: previous ? previous.startIndex + previous.options.length : 0 });
-
-          return numbered;
-        },
-        []
-      ),
-    [options]
-  );
 
   const spaceBelow = window.innerHeight - (caretRect.y + caretRect.height);
   const height = Math.max(
@@ -66,7 +51,9 @@ export const PromptTriggerAutocomplete = ({
     listRef.current
       ?.querySelector(`#${CSS.escape(`${optionIdPrefix}${activeIndex}`)}`)
       ?.scrollIntoView({ block: 'nearest' });
-  }, [activeIndex, optionIdPrefix]);
+  }, [activeIndex, groups, optionIdPrefix]);
+
+  let nextIndex = 0;
 
   return (
     <Portal>
@@ -96,9 +83,8 @@ export const PromptTriggerAutocomplete = ({
               <Text color="fg.subtle" fontSize="xs" fontWeight="700" px="2" textTransform="uppercase" truncate>
                 {group.group}
               </Text>
-              {group.options.map((option, position) => {
-                const index = group.startIndex + position;
-
+              {group.options.map((option) => {
+                const index = nextIndex++;
                 return (
                   <AutocompleteOption
                     key={`${option.group}-${option.value}`}

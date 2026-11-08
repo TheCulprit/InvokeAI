@@ -9,19 +9,24 @@ import { getActiveTriggerQuery, insertPromptText } from '@features/generation/ui
 import { PromptTriggerAutocomplete } from '@features/generation/ui/promptFields/PromptTriggerAutocomplete';
 import {
   getInlineTriggerOptions,
+  groupPromptTriggerOptions,
   usePromptTriggerOptions,
 } from '@features/generation/ui/promptFields/promptTriggerOptions';
 import { DismissOnViewportChange } from '@features/generation/ui/promptFields/useDismissOnViewportChange';
 import { isImeComposing } from '@platform/browser/imeComposition';
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 
 const CARET_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
 const LIST_KEYS = ['ArrowUp', 'ArrowDown'];
+const WILDCARD_KEYS = ['_'] as const;
 
 interface AutocompleteState {
+  angle?: { prefix: string; suffix: string };
   caretRect: CaretRect;
+  projectId: string;
   query: PromptTriggerQuery;
   textarea: HTMLTextAreaElement;
+  value: string;
 }
 
 export interface PromptTriggerAutocompleteApi {
@@ -31,13 +36,13 @@ export interface PromptTriggerAutocompleteApi {
     'aria-controls': string | undefined;
     'aria-expanded': boolean;
     role: 'combobox';
+    onBlur: () => void;
     onCompositionEnd: (event: CompositionEvent<HTMLTextAreaElement>) => void;
     onCompositionStart: () => void;
     onKeyUp: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   };
   element: ReactNode;
   isOpen: boolean;
-  close: () => void;
   refresh: (textarea: HTMLTextAreaElement | null) => void;
   handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
 }
@@ -47,47 +52,100 @@ export const usePromptTriggerAutocomplete = ({
   keys,
   loras,
   onChange,
+  projectId,
   selectedModel,
 }: {
   keys: readonly PromptTriggerKey[];
   loras: GenerateLora[];
+  projectId: string;
   selectedModel: GenerateModelConfig | undefined;
   isDisabled?: boolean;
   onChange: (value: string) => void;
 }): PromptTriggerAutocompleteApi => {
   const listboxId = useId();
   const optionIdPrefix = `${listboxId}-option-`;
-  const [state, setState] = useState<AutocompleteState | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const isComposingRef = useRef(false);
+  const [savedState, setState] = useState<AutocompleteState | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(0);
+  const [lastAngleOption, setLastAngleOption] = useState<PromptTriggerOption | null>(null);
+  const [isComposing, setIsComposing] = useState(false);
   const options = usePromptTriggerOptions(loras, selectedModel);
 
-  const matches = useMemo(
-    () => (state ? getInlineTriggerOptions(options, state.query.key, state.query.query) : []),
+  const state = !isDisabled && savedState?.projectId === projectId ? savedState : null;
+  const groups = useMemo(
+    () =>
+      state ? groupPromptTriggerOptions(getInlineTriggerOptions(options, state.query.key, state.query.query)) : [],
     [options, state]
   );
-  const isOpen = state !== null && matches.length > 0;
+  const matches = useMemo(() => groups.flatMap((group) => group.options), [groups]);
+  const isOpen = state !== null && !isComposing && matches.length > 0;
+  const selectedIndex =
+    activeIndex === null
+      ? Math.max(
+          0,
+          matches.findIndex(
+            (option) => option.group === lastAngleOption?.group && option.value === lastAngleOption.value
+          )
+        )
+      : activeIndex < matches.length
+        ? activeIndex
+        : 0;
   const close = useCallback(() => setState(null), []);
 
   const refresh = useCallback(
-    (textarea: HTMLTextAreaElement | null) => {
-      if (!textarea || isDisabled || isComposingRef.current) {
-        setState(null);
+    (textarea: HTMLTextAreaElement | null, finishedComposition = false) => {
+      if (!textarea || isDisabled) {
+        close();
+        return;
+      }
+      if (isComposing && !finishedComposition) {
         return;
       }
 
-      const query = getActiveTriggerQuery(textarea.value, textarea.selectionStart, keys);
-      const caretRect = query ? getTextareaCaretRect(textarea, query.range.start) : null;
+      const { value, selectionStart, selectionEnd } = textarea;
+      const wildcard = keys.includes('_') ? getActiveTriggerQuery(value, selectionStart, WILDCARD_KEYS) : null;
 
-      setState(query && caretRect ? { caretRect, query, textarea } : null);
+      if (state?.angle && state.textarea === textarea) {
+        const { prefix, suffix } = state.angle;
+        const start = prefix.length;
+        const end = value.length - suffix.length;
+        // An untouched selection is still what an immediate pick should replace.
+        if (state.value === value && selectionStart === start && selectionEnd === state.query.range.end) {
+          return;
+        }
+        if (!wildcard || wildcard.range.start < start) {
+          const query = value.slice(start, end);
+          // The shortcut leaves no delimiter in the prompt. Only edits between the saved boundaries belong to it.
+          if (
+            end >= start &&
+            selectionStart === end &&
+            selectionEnd === end &&
+            value.startsWith(prefix) &&
+            value.endsWith(suffix) &&
+            !/[\n>]/.test(query) &&
+            (state.value !== value || state.query.query === query)
+          ) {
+            if (state.value !== value) {
+              setState({ ...state, query: { key: '<', query, range: { start, end } }, value });
+              setActiveIndex(0);
+            }
+            return;
+          }
+        }
+      }
+
+      const caretRect = wildcard ? getTextareaCaretRect(textarea, wildcard.range.start) : null;
+      setState(wildcard && caretRect ? { caretRect, projectId, query: wildcard, textarea, value } : null);
       setActiveIndex(0);
     },
-    [isDisabled, keys]
+    [close, isComposing, isDisabled, keys, projectId, state]
   );
 
   const selectOption = useCallback(
     (option: PromptTriggerOption) => {
-      if (state) {
+      if (state && state.textarea.isConnected && state.textarea.value === state.value && !isComposing) {
+        if (state.angle) {
+          setLastAngleOption(option);
+        }
         insertPromptText({
           onChange,
           range: state.query.range,
@@ -99,12 +157,20 @@ export const usePromptTriggerAutocomplete = ({
 
       setState(null);
     },
-    [onChange, state]
+    [isComposing, onChange, state]
   );
 
-  const handleKeyDown = useCallback(
+  const handlePickerKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>): void => {
-      if (!isOpen || isImeComposing(event.nativeEvent)) {
+      if (
+        !state ||
+        (!isOpen && !state.angle) ||
+        isComposing ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isImeComposing(event.nativeEvent)
+      ) {
         return;
       }
 
@@ -115,20 +181,20 @@ export const usePromptTriggerAutocomplete = ({
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        setState(null);
+        close();
         return;
       }
 
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && matches.length > 0) {
         const step = event.key === 'ArrowDown' ? 1 : -1;
 
         event.preventDefault();
-        setActiveIndex((current) => (current + step + matches.length) % matches.length);
+        setActiveIndex((selectedIndex + step + matches.length) % matches.length);
         return;
       }
 
-      if (event.key === 'Enter' || event.key === 'Tab') {
-        const option = matches[activeIndex];
+      if (event.key === 'Enter' || (event.key === 'Tab' && (!event.shiftKey || !state.angle))) {
+        const option = matches[selectedIndex];
 
         if (option) {
           event.preventDefault();
@@ -136,7 +202,36 @@ export const usePromptTriggerAutocomplete = ({
         }
       }
     },
-    [activeIndex, isOpen, matches, selectOption]
+    [close, isComposing, isOpen, matches, selectOption, selectedIndex, state]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+      if (event.key !== '<' || !keys.includes('<') || isDisabled || isComposing || isImeComposing(event.nativeEvent)) {
+        handlePickerKeyDown(event);
+        return;
+      }
+
+      const textarea = event.currentTarget;
+      const range = { end: textarea.selectionEnd, start: textarea.selectionStart };
+      const caretRect = getTextareaCaretRect(textarea, range.start);
+      if (!caretRect) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveIndex(null);
+      setState({
+        angle: { prefix: textarea.value.slice(0, range.start), suffix: textarea.value.slice(range.end) },
+        caretRect,
+        projectId,
+        query: { key: '<', query: '', range },
+        textarea,
+        value: textarea.value,
+      });
+    },
+    [handlePickerKeyDown, isComposing, isDisabled, keys, projectId]
   );
 
   const handleKeyUp = useCallback(
@@ -149,25 +244,27 @@ export const usePromptTriggerAutocomplete = ({
   );
 
   const handleCompositionStart = useCallback(() => {
-    isComposingRef.current = true;
-    setState(null);
-  }, []);
+    setIsComposing(true);
+    if (!state?.angle) {
+      close();
+    }
+  }, [close, state]);
 
   const handleCompositionEnd = useCallback(
     (event: CompositionEvent<HTMLTextAreaElement>) => {
-      isComposingRef.current = false;
-      refresh(event.currentTarget);
+      setIsComposing(false);
+      refresh(event.currentTarget, true);
     },
     [refresh]
   );
 
   return {
-    close,
     comboboxProps: {
-      'aria-activedescendant': isOpen ? `${optionIdPrefix}${activeIndex}` : undefined,
+      'aria-activedescendant': isOpen ? `${optionIdPrefix}${selectedIndex}` : undefined,
       'aria-autocomplete': 'list',
       'aria-controls': isOpen ? listboxId : undefined,
       'aria-expanded': isOpen,
+      onBlur: close,
       onCompositionEnd: handleCompositionEnd,
       onCompositionStart: handleCompositionStart,
       onKeyUp: handleKeyUp,
@@ -178,11 +275,11 @@ export const usePromptTriggerAutocomplete = ({
         <>
           <DismissOnViewportChange dismiss={close} enabled />
           <PromptTriggerAutocomplete
-            activeIndex={activeIndex}
+            activeIndex={selectedIndex}
             caretRect={state.caretRect}
+            groups={groups}
             listboxId={listboxId}
             optionIdPrefix={optionIdPrefix}
-            options={matches}
             onSelect={selectOption}
           />
         </>

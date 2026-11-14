@@ -9,6 +9,7 @@
 
 import type {
   CanvasDocumentContractV3,
+  CanvasEngine,
   CanvasProjectMutation,
   CanvasSnapshotKind,
   CanvasStateContractV3,
@@ -25,6 +26,7 @@ export interface RestorePointEngine {
     replaceDocument(document: CanvasDocumentContractV3): boolean;
     restoreSnapshot(snapshotId: string, keepCurrentAs?: { id: string; name: string; createdAt: string }): boolean;
   };
+  readonly interaction: Pick<CanvasEngine['interaction'], 'set'>;
   readonly lifecycle: { flushPendingUploads(options?: { readonly waitForHeldPixels?: boolean }): Promise<void> };
 }
 
@@ -125,15 +127,18 @@ export const clearCanvasWithRestorePoint = async (request: ClearCanvasRequest): 
   for (const queueItemId of target.stop) {
     request.cancelQueueItem(queueItemId);
   }
-  const replaced = engine.document.replaceDocument(
-    createNewCanvasState(target.document.width, target.document.height).document
-  );
+  const { document } = createNewCanvasState(target.document.width, target.document.height);
+  const replaced = engine.document.replaceDocument(document);
   if (!replaced) {
     if (restorePointId) {
       request.ports.apply({ snapshotId: restorePointId, type: 'deleteCanvasSnapshot' });
     }
     return { status: 'failed' };
   }
+  engine.interaction.set('layerQuickSwitch', {
+    bookmarkedLayerId: document.stacks.inpaint_mask[0]?.id ?? null,
+    previousLayerId: null,
+  });
   return { restorePointId, status: 'cleared', stopped: target.stop.length };
 };
 

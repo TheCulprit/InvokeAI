@@ -34,6 +34,7 @@ const createFixture = ({ blank = false, flush, lock = null, open = true, swaps =
         return swaps;
       }),
     },
+    interaction: { set: vi.fn() },
     lifecycle: {
       flushPendingUploads: vi.fn(async () => {
         order.push('flush');

@@ -192,11 +192,17 @@ export const createEngineRegistry = (
       const carry = carries.get(projectId);
       carries.delete(projectId);
       const engine = createCanvasEngine({ projectId, ...deps, droppedHistorySteps: carry?.droppedHistorySteps ?? 0 });
-      engine.tools.setTool(initialTool(carry, engine.document.getDocument()));
-      if (carry?.bookmarkedLayerId) {
+      const document = engine.document.getDocument();
+      const tool = initialTool(carry, document);
+      engine.tools.setTool(tool);
+      let bookmarkedLayerId = carry?.bookmarkedLayerId ?? null;
+      if (!carry && tool === 'brush' && document?.stacks.inpaint_mask.length === 1) {
+        bookmarkedLayerId = document.stacks.inpaint_mask[0]?.id ?? null;
+      }
+      if (bookmarkedLayerId) {
         // A bookmark naming a layer that is gone is ignored by its readers.
         engine.interaction.set('layerQuickSwitch', {
-          bookmarkedLayerId: carry.bookmarkedLayerId,
+          bookmarkedLayerId,
           previousLayerId: null,
         });
       }

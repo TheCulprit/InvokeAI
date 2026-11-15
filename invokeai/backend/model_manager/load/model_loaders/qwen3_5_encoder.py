@@ -5,6 +5,7 @@ file or of a model's shards; the single-file loader below and a model folder's l
 """
 
 from collections.abc import Iterable, Sequence
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -17,12 +18,17 @@ from invokeai.backend.model_manager.configs.factory import AnyModelConfig
 from invokeai.backend.model_manager.configs.qwen3_5_encoder import (
     QWEN3_5_FINAL_NORM_VARIANTS,
     Qwen35Encoder_Checkpoint_Config,
+    Qwen35Encoder_GGUF_Config,
     qwen3_5_key_prefix,
 )
 from invokeai.backend.model_manager.load.load_default import ModelLoader, _model_declared_skip_patterns
 from invokeai.backend.model_manager.load.model_loader_registry import ModelLoaderRegistry
 from invokeai.backend.model_manager.taxonomy import AnyModel, BaseModelType, ModelFormat, ModelType, SubModelType
+from invokeai.backend.model_manager.util.llamacpp_keys import convert_llamacpp_decoder_keys
 from invokeai.backend.quantization.fp8_scaled import cast_state_dict, reject_quantized_side_channel
+from invokeai.backend.quantization.gguf.ggml_tensor import GGMLTensor
+from invokeai.backend.quantization.gguf.loaders import gguf_sd_loader, unpack_ggml_at_load
+from invokeai.backend.quantization.gguf.row_ops import split_rows, take_rows
 from invokeai.backend.quantization.int8_convrot import (
     drop_unconsumed_quantization_sidecars,
     extract_int8_convrot_markers,
@@ -207,3 +213,150 @@ class Qwen35EncoderCheckpointLoader(ModelLoader):
             what=f"Qwen3.5 encoder checkpoint {model_path.name}",
         )
         return self._apply_fp8_layerwise_casting(model, config, SubModelType.TextEncoder)
+
+
+_GGUF_COMPONENTS = {
+    "post_attention_norm.weight": "post_attention_layernorm.weight",
+    "attn_qkv.weight": "linear_attn.in_proj_qkv.weight",
+    "attn_gate.weight": "linear_attn.in_proj_z.weight",
+    "ssm_alpha.weight": "linear_attn.in_proj_a.weight",
+    "ssm_beta.weight": "linear_attn.in_proj_b.weight",
+    "ssm_a": "linear_attn.A_log",
+    "ssm_dt.bias": "linear_attn.dt_bias",
+    "ssm_conv1d.weight": "linear_attn.conv1d.weight",
+    "ssm_norm.weight": "linear_attn.norm.weight",
+    "ssm_out.weight": "linear_attn.out_proj.weight",
+}
+
+
+def _tile_output_projection_input(
+    _module: nn.Module,
+    inputs: tuple[torch.Tensor],
+    *,
+    key_heads: int,
+    values_per_key: int,
+    value_head_size: int,
+) -> tuple[torch.Tensor]:
+    (hidden_states,) = inputs
+    tiled = hidden_states.unflatten(-1, (key_heads, values_per_key, value_head_size)).transpose(-3, -2)
+    return (tiled.reshape_as(hidden_states),)
+
+
+def _restore_gguf_layout(raw: dict[str, torch.Tensor], model: "Qwen35Encoder") -> dict[str, torch.Tensor]:
+    """Reverse llama.cpp's Qwen3.5 tensor conversions while keeping Linear weights packed."""
+    config = model.config
+    key_heads = config.linear_num_key_heads
+    value_heads = config.linear_num_value_heads
+    values_per_key = value_heads // key_heads
+    value_head_size = config.linear_value_head_dim
+    qk_rows = 2 * key_heads * config.linear_key_head_dim
+    value_rows = value_heads * value_head_size
+
+    # llama.cpp tiles V heads to broadcast K across them. Transformers repeats each K head
+    # consecutively, so restore the corresponding groups of V rows in the packed weights.
+    head_order = torch.arange(value_heads).reshape(values_per_key, key_heads).T.flatten()
+    value_order = (head_order[:, None] * value_head_size + torch.arange(value_head_size)).flatten()
+    qkv_order = torch.cat((torch.arange(qk_rows), qk_rows + value_order))
+    tile_input = partial(
+        _tile_output_projection_input,
+        key_heads=key_heads,
+        values_per_key=values_per_key,
+        value_head_size=value_head_size,
+    )
+
+    named = convert_llamacpp_decoder_keys(raw)
+    raw.clear()
+    for index, layer in enumerate(model.layers):
+        if config.layer_types[index] != "linear_attention":
+            continue
+        prefix = f"model.layers.{index}."
+        for fused, left, right, rows in (
+            ("attn_qkv_gate", "attn_qkv", "attn_gate", qk_rows + value_rows),
+            ("ssm_beta_alpha", "ssm_beta", "ssm_alpha", value_heads),
+        ):
+            if (weight := named.pop(f"{prefix}{fused}.weight", None)) is not None:
+                named[f"{prefix}{left}.weight"], named[f"{prefix}{right}.weight"] = split_rows(weight, rows)
+
+        # Reorder the activation instead of the columns of the output projection. Its GGML blocks
+        # span those columns, so a weight permutation could require unpacking and requantizing.
+        layer.linear_attn.out_proj.register_forward_pre_hook(tile_input)
+
+    sd: dict[str, torch.Tensor] = {}
+    while named:
+        key, weight = named.popitem()
+        name = key.removeprefix("model.")
+        if name.startswith("layers."):
+            layers, index, component = name.split(".", 2)
+            name = f"{layers}.{index}.{_GGUF_COMPONENTS.get(component, component)}"
+        if name.endswith(("linear_attn.conv1d.weight", "linear_attn.in_proj_qkv.weight")):
+            weight = take_rows(weight, qkv_order)
+        elif name.endswith("linear_attn.in_proj_z.weight"):
+            weight = take_rows(weight, value_order)
+        elif name.endswith(("linear_attn.in_proj_a.weight", "linear_attn.in_proj_b.weight")):
+            weight = take_rows(weight, head_order)
+        elif name.endswith(("linear_attn.A_log", "linear_attn.dt_bias")):
+            # Recover the decay parameter before lowering precision. The HF forward exponentiates it.
+            weight = _gguf_float32(weight)[head_order]
+            if name.endswith(".A_log"):
+                weight = (-weight).log()
+        elif name.endswith("norm.weight") and not name.endswith("linear_attn.norm.weight"):
+            # Transformers's RMSNorm adds 1 in forward; llama.cpp folds that offset into the file.
+            weight = _gguf_float32(weight) - 1
+        sd[name] = weight
+    return sd
+
+
+def _gguf_float32(weight: torch.Tensor) -> torch.Tensor:
+    if isinstance(weight, GGMLTensor):
+        weight.compute_dtype = torch.float32
+        return weight.get_dequantized_tensor()
+    return weight.float()
+
+
+@ModelLoaderRegistry.register(base=BaseModelType.Any, type=ModelType.Qwen35Encoder, format=ModelFormat.GGUFQuantized)
+class Qwen35EncoderGGUFLoader(ModelLoader):
+    """Load the Qwen3.5 9B language tower as an encoder with Invoke's bundled tokenizer."""
+
+    def get_size_fs(
+        self, config: AnyModelConfig, model_path: Path, submodel_type: Optional[SubModelType] = None
+    ) -> int:
+        if submodel_type is SubModelType.Tokenizer:
+            return 0
+        return super().get_size_fs(config, model_path, submodel_type)
+
+    def _load_model(self, config: AnyModelConfig, submodel_type: Optional[SubModelType] = None) -> AnyModel:
+        if not isinstance(config, Qwen35Encoder_GGUF_Config):
+            raise TypeError(f"Expected Qwen35Encoder_GGUF_Config, got {type(config).__name__}.")
+        if submodel_type is SubModelType.Tokenizer:
+            from invokeai.backend.qwen3_5.qwen3_5_encoder import load_bundled_qwen3_5_tokenizer
+
+            return load_bundled_qwen3_5_tokenizer()
+        if submodel_type is SubModelType.TextEncoder:
+            return self._load_text_encoder(config)
+        raise ValueError(f"Expected a Qwen3.5 GGUF TextEncoder or Tokenizer, got {submodel_type}.")
+
+    def _load_text_encoder(self, config: Qwen35Encoder_GGUF_Config) -> "Qwen35Encoder":
+        from invokeai.backend.qwen3_5.qwen3_5_encoder import Qwen35Encoder, qwen3_5_text_config
+
+        text_config = qwen3_5_text_config(config.variant)
+        with accelerate.init_empty_weights():
+            model = Qwen35Encoder(text_config, final_norm=True)
+        model_dtype = TorchDevice.choose_bfloat16_safe_dtype(TorchDevice.choose_torch_device())
+        layers = tuple(f"blk.{index}." for index in range(text_config.num_hidden_layers))
+        raw = gguf_sd_loader(
+            Path(config.path),
+            compute_dtype=model_dtype,
+            keep=lambda name: name in {"token_embd.weight", "output_norm.weight"} or name.startswith(layers),
+        )
+        sd = _restore_gguf_layout(raw, model)
+        unpack_ggml_at_load(sd, model, _model_declared_skip_patterns(model), self.ram_cache.make_room)
+        for index, layer_type in enumerate(text_config.layer_types):
+            if layer_type == "linear_attention":
+                key = f"layers.{index}.linear_attn.conv1d.weight"
+                if key in sd:
+                    sd[key] = sd[key].unsqueeze(1)
+        what = f"Qwen3.5 GGUF encoder {config.name!r}"
+        result = model.load_state_dict(sd, strict=False, assign=True)
+        log_unexpected_keys(what, result.unexpected_keys)
+        reject_incomplete_load(model, what=what)
+        return model.eval()

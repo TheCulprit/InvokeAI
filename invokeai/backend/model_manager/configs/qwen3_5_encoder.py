@@ -225,3 +225,30 @@ class Qwen35Encoder_Checkpoint_Config(Checkpoint_Config_Base, Config_Base):
         if variant in QWEN3_5_FINAL_NORM_VARIANTS:
             _raise_if_not_whole(state_dict, prefix, Qwen35VariantType(variant))
         return cls(**override_fields, variant=variant)
+
+
+class Qwen35Encoder_GGUF_Config(Checkpoint_Config_Base, Config_Base):
+    """Configuration for the Qwen3.5 9B language tower in a llama.cpp GGUF."""
+
+    base: Literal[BaseModelType.Any] = Field(default=BaseModelType.Any)
+    type: Literal[ModelType.Qwen35Encoder] = Field(default=ModelType.Qwen35Encoder)
+    format: Literal[ModelFormat.GGUFQuantized] = Field(default=ModelFormat.GGUFQuantized)
+    cpu_only: bool | None = Field(default=None, description="Whether this model should run on CPU only")
+    variant: Literal[Qwen35VariantType.Qwen35_9B] = Field(description="Qwen3.5 model size variant")
+
+    @classmethod
+    def from_model_on_disk(cls, mod: ModelOnDisk, override_fields: dict[str, Any]) -> Self:
+        raise_if_not_file(mod)
+        raise_for_override_fields(cls, override_fields)
+        if mod.path.suffix.lower() != ".gguf" or mod.metadata().get("general.architecture") != "qwen35":
+            raise NotAMatchError("expected a llama.cpp Qwen3.5 language model GGUF")
+        metadata = mod.metadata()
+        if metadata.get("qwen35.embedding_length") != 4096:
+            raise NotAMatchError("only Qwen3.5 9B is supported as a GGUF encoder")
+        if metadata.get("split.count", 1) != 1:
+            raise InvalidMatchError("Qwen3.5 GGUF encoders must be in a single file.")
+        state_dict = mod.load_state_dict()
+        required = ("token_embd.weight", "output_norm.weight", *(f"blk.{i}.attn_norm.weight" for i in range(32)))
+        if missing := next((key for key in required if key not in state_dict), None):
+            raise InvalidMatchError(f"Qwen3.5 9B GGUF encoder is incomplete: missing {missing}.")
+        return cls(**{**override_fields, "variant": Qwen35VariantType.Qwen35_9B})

@@ -1,4 +1,11 @@
-export type WorkbenchThemeId = 'classic' | 'light' | 'osakaJade' | 'mono' | 'ultradark' | 'catppuccinMocha';
+export type WorkbenchThemeId =
+  | 'invokeBlue'
+  | 'classic'
+  | 'light'
+  | 'osakaJade'
+  | 'mono'
+  | 'ultradark'
+  | 'catppuccinMocha';
 
 /** Keep the ramp absolute: 50 lightest, 950 darkest, matching Chakra gray. */
 export type NeutralStep = 50 | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900 | 950;
@@ -10,7 +17,7 @@ export type NeutralStep = 50 | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 9
 export interface ThemeColors {
   /** Neutral ramp, lightest (`50`) → darkest (`950`). Source of all bg/fg/border. */
   neutral: Record<NeutralStep, string>;
-  /** Invoke identity (lime). Two seeds; the palette's other steps derive in `system.ts`. */
+  /** Invoke identity color. Two seeds; the palette's other steps derive in `system.ts`. */
   brand: { solid: string; contrast: string };
   /** Selection / focus (blue). */
   accent: { solid: string; contrast: string };
@@ -194,6 +201,13 @@ const catppuccinMocha: ThemeColors = {
 
 /** Registry order is Settings display order. */
 export const THEMES: ThemeDefinition[] = [
+  {
+    id: 'invokeBlue',
+    label: 'Invoke Blue',
+    description: 'Graphite surfaces with a vivid blue Invoke mark and controls.',
+    colorScheme: 'dark',
+    colors: { ...classic, brand: { ...classic.brand, solid: '#38A8FF' } },
+  },
   {
     id: 'classic',
     label: 'Classic',

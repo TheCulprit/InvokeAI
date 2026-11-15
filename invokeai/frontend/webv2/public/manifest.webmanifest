@@ -11,7 +11,7 @@
   "theme_color": "#16181d",
   "icons": [
     {
-      "src": "./invoke-icon.svg",
+      "src": "./invoke-blue-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"

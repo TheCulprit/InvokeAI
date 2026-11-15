@@ -153,7 +153,7 @@ describe('loadWorkbenchSettings', () => {
 
     const preferences = await store.loadWorkbenchSettings();
 
-    expect(preferences.themeId).toBe('classic');
+    expect(preferences.themeId).toBe('invokeBlue');
     expect(preferences.developerLogLevel).toBe('warn');
   });
 
@@ -180,7 +180,7 @@ describe('loadWorkbenchSettings', () => {
 
     const preferences = await store.loadWorkbenchSettings();
 
-    expect(preferences.themeId).toBe('classic');
+    expect(preferences.themeId).toBe('invokeBlue');
   });
 
   it('does not share a same-user single-flight or publish a prior epoch response', async () => {
@@ -304,7 +304,7 @@ describe('patchWorkbenchPreferences', () => {
     resolveWrite?.();
 
     await expect(write).resolves.toBeUndefined();
-    expect(store.getWorkbenchPreferences().themeId).toBe('classic');
+    expect(store.getWorkbenchPreferences().themeId).toBe('invokeBlue');
   });
 });
 
@@ -315,7 +315,7 @@ describe('clearWorkbenchSettings', () => {
 
     await store.clearWorkbenchSettings();
 
-    expect(store.getWorkbenchPreferences().themeId).toBe('classic');
+    expect(store.getWorkbenchPreferences().themeId).toBe('invokeBlue');
     expect(api.__clientState.has(SETTINGS_KEY)).toBe(false);
   });
 
@@ -346,7 +346,7 @@ describe('clearWorkbenchSettings', () => {
 
     expect(api.__clientState.has(SETTINGS_KEY)).toBe(false);
     expect(storage.has('invokeai:v7:webv2:settings')).toBe(false);
-    expect(store.getWorkbenchPreferences().themeId).toBe('classic');
+    expect(store.getWorkbenchPreferences().themeId).toBe('invokeBlue');
   });
 });
 

@@ -7,8 +7,10 @@ import type {
   NodeFieldStringSettings,
 } from '@features/workflow/utility';
 
-import { HStack, Icon, Input, Popover, Portal, Stack, Text } from '@chakra-ui/react';
+import { Checkbox, HStack, Icon, Input, Popover, Portal, Stack, Text } from '@chakra-ui/react';
+import { getPromptLoraLoaders } from '@features/workflow/core/promptLoraScope';
 import { isSeedInputField } from '@features/workflow/graph';
+import { useInvocationTemplatesSelector } from '@features/workflow/react';
 import { useFocusedDraft } from '@features/workflow/ui/fields/NumericInput';
 import { useProjectGraphCommands } from '@features/workflow/ui/useProjectGraphCommands';
 import {
@@ -212,16 +214,22 @@ const OptionRow = ({
 
 const StringSettingsBody = ({
   onChange,
+  projectGraph,
   settings,
 }: {
   onChange: (settings: NodeFieldFormSettings) => void;
+  projectGraph: ProjectGraphState;
   settings: NodeFieldStringSettings;
 }) => {
   const { t } = useTranslation();
+  const templates = useInvocationTemplatesSelector((snapshot) => snapshot.templates);
+  const loaders = settings.component === 'prompt' ? getPromptLoraLoaders(projectGraph, templates) : [];
+  const loaderIds = settings.loraLoaderIds ?? [];
   const controlOptions = useMemo(
     () => [
       { label: t('widgets.workflow.formBuilder.controlTextInput'), value: 'input' },
       { label: t('widgets.workflow.formBuilder.controlTextarea'), value: 'textarea' },
+      { label: t('widgets.workflow.formBuilder.controlPrompt'), value: 'prompt' },
       { label: t('widgets.workflow.formBuilder.controlDropdown'), value: 'dropdown' },
     ],
     [t]
@@ -253,6 +261,35 @@ const StringSettingsBody = ({
         value={settings.component}
         onChange={onComponentChange}
       />
+      {settings.component === 'prompt' ? (
+        <Stack gap="1" maxH="12rem" overflowY="auto">
+          <Text fontSize="xs">{t('widgets.workflow.formBuilder.promptLoraLoaders')}</Text>
+          <Text color="fg.subtle" fontSize="xs">
+            {t('widgets.workflow.formBuilder.promptLoraLoadersHint')}
+          </Text>
+          {loaders.map(({ node, label }, index) => (
+            <Checkbox.Root
+              key={node.id}
+              checked={loaderIds.includes(node.id)}
+              size="sm"
+              onCheckedChange={({ checked }) =>
+                onChange({
+                  ...settings,
+                  loraLoaderIds: checked === true ? [...loaderIds, node.id] : loaderIds.filter((id) => id !== node.id),
+                })
+              }
+            >
+              <Checkbox.HiddenInput />
+              <Checkbox.Control>
+                <Checkbox.Indicator />
+              </Checkbox.Control>
+              <Checkbox.Label>
+                {loaders.filter((loader) => loader.label === label).length > 1 ? `${label} (${index + 1})` : label}
+              </Checkbox.Label>
+            </Checkbox.Root>
+          ))}
+        </Stack>
+      ) : null}
       {settings.component === 'dropdown' ? (
         <Stack gap="1">
           <Text color="fg.subtle" fontSize="xs">
@@ -364,7 +401,7 @@ export const NodeFieldSettingsPopover = ({
                     onChange={onSettingsChange}
                   />
                 ) : (
-                  <StringSettingsBody settings={settings} onChange={onSettingsChange} />
+                  <StringSettingsBody projectGraph={projectGraph} settings={settings} onChange={onSettingsChange} />
                 )}
               </Stack>
             </Popover.Body>

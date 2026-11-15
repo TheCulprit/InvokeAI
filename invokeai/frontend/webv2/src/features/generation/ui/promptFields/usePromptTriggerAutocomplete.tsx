@@ -1,7 +1,10 @@
 import type { GenerateLora, GenerateModelConfig } from '@features/generation/core/types';
 import type { CaretRect } from '@features/generation/ui/promptFields/promptCaret';
 import type { PromptTriggerKey, PromptTriggerQuery } from '@features/generation/ui/promptFields/promptFocus';
-import type { PromptTriggerOption } from '@features/generation/ui/promptFields/promptTriggerOptions';
+import type {
+  PromptTriggerOption,
+  WorkflowPromptTriggerScope,
+} from '@features/generation/ui/promptFields/promptTriggerOptions';
 import type { CompositionEvent, KeyboardEvent, ReactNode } from 'react';
 
 import { getTextareaCaretRect } from '@features/generation/ui/promptFields/promptCaret';
@@ -54,11 +57,13 @@ export const usePromptTriggerAutocomplete = ({
   onChange,
   projectId,
   selectedModel,
+  workflowScope,
 }: {
   keys: readonly PromptTriggerKey[];
   loras: GenerateLora[];
   projectId: string;
   selectedModel: GenerateModelConfig | undefined;
+  workflowScope?: WorkflowPromptTriggerScope;
   isDisabled?: boolean;
   onChange: (value: string) => void;
 }): PromptTriggerAutocompleteApi => {
@@ -68,13 +73,15 @@ export const usePromptTriggerAutocomplete = ({
   const [activeIndex, setActiveIndex] = useState<number | null>(0);
   const [lastAngleOption, setLastAngleOption] = useState<PromptTriggerOption | null>(null);
   const [isComposing, setIsComposing] = useState(false);
-  const options = usePromptTriggerOptions(loras, selectedModel);
+  const options = usePromptTriggerOptions(loras, selectedModel, workflowScope);
 
   const state = !isDisabled && savedState?.projectId === projectId ? savedState : null;
   const groups = useMemo(
     () =>
-      state ? groupPromptTriggerOptions(getInlineTriggerOptions(options, state.query.key, state.query.query)) : [],
-    [options, state]
+      state
+        ? groupPromptTriggerOptions(getInlineTriggerOptions(options, state.query.key, state.query.query, !!workflowScope))
+        : [],
+    [options, state, workflowScope]
   );
   const matches = useMemo(() => groups.flatMap((group) => group.options), [groups]);
   const isOpen = state !== null && !isComposing && matches.length > 0;

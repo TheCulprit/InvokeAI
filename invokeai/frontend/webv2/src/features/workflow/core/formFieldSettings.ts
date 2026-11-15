@@ -14,7 +14,7 @@ import {
  */
 
 export type NumberFieldComponent = 'number-input' | 'slider' | 'number-input-and-slider';
-export type StringFieldComponent = 'input' | 'textarea' | 'dropdown';
+export type StringFieldComponent = 'input' | 'textarea' | 'dropdown' | 'prompt';
 
 export interface NodeFieldStringOption {
   label: string;
@@ -38,6 +38,7 @@ export interface NodeFieldStringSettings {
   component: StringFieldComponent;
   /** The choices a dropdown offers; ignored by the other controls. */
   options: NodeFieldStringOption[];
+  loraLoaderIds?: string[];
 }
 
 export type NodeFieldFormSettings = NodeFieldNumberSettings | NodeFieldStringSettings;
@@ -47,7 +48,7 @@ export const NUMBER_FIELD_COMPONENTS: readonly NumberFieldComponent[] = [
   'slider',
   'number-input-and-slider',
 ];
-export const STRING_FIELD_COMPONENTS: readonly StringFieldComponent[] = ['input', 'textarea', 'dropdown'];
+export const STRING_FIELD_COMPONENTS: readonly StringFieldComponent[] = ['input', 'textarea', 'dropdown', 'prompt'];
 
 // The v6 editor tags each bag with the field kind it was authored for.
 const LEGACY_SETTINGS_TYPES = {
@@ -122,7 +123,14 @@ export const getNodeFieldFormSettings = (
   if (typeName === 'StringField') {
     const component = isStringComponent(settings.component) ? settings.component : 'input';
 
-    return { component, kind: 'string', options: component === 'dropdown' ? toOptions(settings.options) : [] };
+    return {
+      component,
+      kind: 'string',
+      options: component === 'dropdown' ? toOptions(settings.options) : [],
+      ...(component === 'prompt' && Array.isArray(settings.loraLoaderIds)
+        ? { loraLoaderIds: settings.loraLoaderIds.filter((id): id is string => typeof id === 'string' && id !== '') }
+        : {}),
+    };
   }
 
   const component = isNumberComponent(settings.component) ? settings.component : 'number-input';
@@ -149,7 +157,16 @@ const hasInvertedNodeFieldBounds = (settings: NodeFieldFormSettings | null): boo
   settings.min > settings.max;
 
 // The bag keys these settings own; a cleared one is left out rather than carried over from the stored bag.
-const OWNED_SETTINGS_KEYS = new Set(['component', 'max', 'min', 'options', 'showShuffle', 'step', 'type']);
+const OWNED_SETTINGS_KEYS = new Set([
+  'component',
+  'loraLoaderIds',
+  'max',
+  'min',
+  'options',
+  'showShuffle',
+  'step',
+  'type',
+]);
 
 /**
  * The settings bag to store for `settings` on a field of `template`, in the legacy shape: tagged with the field
@@ -173,6 +190,9 @@ export const serializeNodeFieldFormSettings = (
       component: settings.component,
       type,
       ...(settings.component === 'dropdown' ? { options: settings.options.map((option) => ({ ...option })) } : {}),
+      ...(settings.component === 'prompt' && settings.loraLoaderIds?.length
+        ? { loraLoaderIds: [...settings.loraLoaderIds] }
+        : {}),
     };
   }
 

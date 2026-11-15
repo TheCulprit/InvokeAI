@@ -21,6 +21,11 @@ export interface PromptTriggerOptionGroup {
   options: PromptTriggerOption[];
 }
 
+export interface WorkflowPromptTriggerScope {
+  bases: readonly string[];
+  selectedLoraKeys: readonly string[];
+}
+
 const getTriggerPhrases = (model: unknown): string[] => {
   if (!model || typeof model !== 'object') {
     return [];
@@ -41,6 +46,7 @@ export const getPromptTriggerOptions = ({
   selectedModel,
   wildcards,
   wildcardsLabel,
+  workflowScope,
 }: {
   compatibleEmbeddingsLabel: string;
   loras: GenerateLora[];
@@ -49,6 +55,7 @@ export const getPromptTriggerOptions = ({
   selectedModel: GenerateModelConfig | undefined;
   wildcards: readonly { name: string; values: string[] }[];
   wildcardsLabel: string;
+  workflowScope?: WorkflowPromptTriggerScope;
 }): PromptTriggerOption[] => {
   const options: PromptTriggerOption[] = [];
 
@@ -62,13 +69,29 @@ export const getPromptTriggerOptions = ({
     }
   }
 
+  if (workflowScope) {
+    const selected = new Set(workflowScope.selectedLoraKeys);
+    const hasLinkedLoaders = workflowScope.bases.length > 0;
+    for (const model of models) {
+      if (model.type !== 'lora' || (hasLinkedLoaders && !selected.has(model.key))) {
+        continue;
+      }
+      for (const phrase of getTriggerPhrases(model)) {
+        options.push({ group: model.name, kind: 'phrase', label: phrase, value: phrase });
+      }
+    }
+  }
+
   for (const phrase of getTriggerPhrases(selectedModel)) {
     options.push({ group: selectedModel?.name ?? mainModelLabel, kind: 'phrase', label: phrase, value: phrase });
   }
 
-  if (selectedModel) {
+  if (selectedModel || workflowScope) {
     for (const model of models) {
-      if (model.type === 'embedding' && model.base === selectedModel.base) {
+      const compatible = workflowScope
+        ? workflowScope.bases.length === 0 || workflowScope.bases.includes(model.base)
+        : model.base === selectedModel?.base;
+      if (model.type === 'embedding' && compatible) {
         options.push({
           group: compatibleEmbeddingsLabel,
           kind: 'embedding',
@@ -121,12 +144,17 @@ const KINDS_BY_TRIGGER_KEY: Record<PromptTriggerKey, ReadonlySet<PromptTriggerKi
 export const getInlineTriggerOptions = (
   options: readonly PromptTriggerOption[],
   key: PromptTriggerKey,
-  search: string
+  search: string,
+  searchGroup = false
 ): PromptTriggerOption[] => {
   const kinds = KINDS_BY_TRIGGER_KEY[key];
   const query = search.trim().toLowerCase();
 
-  return options.filter((option) => kinds.has(option.kind) && (!query || option.label.toLowerCase().includes(query)));
+  return options.filter(
+    (option) =>
+      kinds.has(option.kind) &&
+      (!query || option.label.toLowerCase().includes(query) || (searchGroup && option.group.toLowerCase().includes(query)))
+  );
 };
 
 export const groupPromptTriggerOptions = (options: readonly PromptTriggerOption[]): PromptTriggerOptionGroup[] =>
@@ -144,7 +172,8 @@ export const groupPromptTriggerOptions = (options: readonly PromptTriggerOption[
 
 export const usePromptTriggerOptions = (
   loras: GenerateLora[],
-  selectedModel: GenerateModelConfig | undefined
+  selectedModel: GenerateModelConfig | undefined,
+  workflowScope?: WorkflowPromptTriggerScope
 ): PromptTriggerOption[] => {
   const { t } = useTranslation();
   const { catalog: models } = useGenerationUi().models;
@@ -160,7 +189,8 @@ export const usePromptTriggerOptions = (
         selectedModel,
         wildcards,
         wildcardsLabel: t('widgets.generate.dynamicPrompts.wildcards'),
+        workflowScope,
       }),
-    [loras, models, selectedModel, t, wildcards]
+    [loras, models, selectedModel, t, wildcards, workflowScope]
   );
 };

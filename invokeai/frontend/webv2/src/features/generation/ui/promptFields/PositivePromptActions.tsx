@@ -327,17 +327,19 @@ export const PromptTriggerPopover = ({
   open,
   positioning,
   selectedModel,
+  workflowScope,
 }: Pick<PositivePromptActionsProps, 'loras' | 'selectedModel'> & {
   allowedKinds?: ReadonlySet<PromptTriggerKind>;
   open: boolean;
   positioning: { getAnchorRect: () => { height: number; width: number; x: number; y: number } | null };
   onClose: () => void;
   onSelect: (trigger: string) => void;
+  workflowScope?: Parameters<typeof usePromptTriggerOptions>[2];
 }) => {
   const { t } = useTranslation();
   const { ensureLoaded: ensureModelsLoaded } = useGenerationUi().models;
   const [searchTerm, setSearchTerm] = useState('');
-  const allOptions = usePromptTriggerOptions(loras, selectedModel);
+  const allOptions = usePromptTriggerOptions(loras, selectedModel, workflowScope);
   const options = useMemo(() => filterPromptTriggerOptionsByKind(allOptions, allowedKinds), [allOptions, allowedKinds]);
   const filteredOptions = useMemo(() => filterPromptTriggerOptions(options, searchTerm), [options, searchTerm]);
   const groupedOptions = useMemo(() => groupPromptTriggerOptions(filteredOptions), [filteredOptions]);

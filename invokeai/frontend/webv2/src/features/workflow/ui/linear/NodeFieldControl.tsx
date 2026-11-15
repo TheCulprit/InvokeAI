@@ -1,7 +1,9 @@
 import type { SeedMode } from '@platform/core/seed';
 
 import { Alert, Box, Field, HStack, Icon, Input, Stack, Text } from '@chakra-ui/react';
+import { WorkflowPromptField } from '@features/generation/components';
 import { isInvocationNode, type NodeFieldFormElement, type ProjectGraphState } from '@features/workflow/contracts';
+import { getPromptLoraScope } from '@features/workflow/core/promptLoraScope';
 import { getWorkflowFieldSeedMode, isSeedInputField } from '@features/workflow/graph';
 import { useInvocationTemplatesSelector } from '@features/workflow/react';
 import { WorkflowFieldInput } from '@features/workflow/ui/fields/WorkflowFieldInput';
@@ -56,7 +58,7 @@ export const useNodeFieldBinding = (element: NodeFieldFormElement, projectGraph:
     ? `${invocationNode.data.label || templates[invocationNode.data.type]?.title || invocationNode.data.type}${groupSuffix}`
     : '';
 
-  return { effectiveTemplate, fieldName, formSettings, instance, invocationNode, nodeContext, nodeId, template };
+  return { effectiveTemplate, fieldName, formSettings, instance, invocationNode, nodeContext, nodeId, template, templates };
 };
 
 export const NodeFieldControl = ({
@@ -72,7 +74,7 @@ export const NodeFieldControl = ({
   const { t } = useTranslation();
   const { editGraph } = useProjectGraphCommands();
   const projectId = useWorkflowProjectSelector((project) => project.id);
-  const { effectiveTemplate, fieldName, formSettings, instance, invocationNode, nodeContext, nodeId, template } =
+  const { effectiveTemplate, fieldName, formSettings, instance, invocationNode, nodeContext, nodeId, template, templates } =
     useNodeFieldBinding(element, projectGraph);
   // The form stays mounted across a workflow switch; a value that arrives later (an upload) must still land in
   // the workflow this control rendered.
@@ -82,6 +84,10 @@ export const NodeFieldControl = ({
 
   const resolvedEdges = getResolvedWorkflowEdges(projectGraph.nodes, projectGraph.edges);
   const isConnected = resolvedEdges.some((edge) => edge.target === nodeId && edge.targetHandle === fieldName);
+  const promptScope =
+    !isConnected && formSettings?.kind === 'string' && formSettings.component === 'prompt'
+      ? getPromptLoraScope(projectGraph, templates, formSettings.loraLoaderIds ?? [], resolvedEdges)
+      : null;
   const label = instance?.label || template?.title || '';
   const description = getEffectiveWorkflowFieldDescription(instance, template);
   const connectedFields = new Set(
@@ -217,23 +223,36 @@ export const NodeFieldControl = ({
         ) : (
           <HStack alignItems="start" gap="1" minW="0" w="full">
             <Box flex="1" minW="0">
-              <WorkflowFieldInput
-                disabled={ratiosDisabled}
-                formSettings={formSettings}
-                id={valueInputId}
-                invalid={isInvalid}
-                nodeId={nodeId}
-                seedMode={getWorkflowFieldSeedMode(instance)}
-                template={getHiDiffusionRatioTemplate(invocationNode, effectiveTemplate, connectedFields)}
-                value={
-                  isHiDiffusionNode(invocationNode.data.type) && isHiDiffusionRatioField(fieldName)
-                    ? (instance?.value ?? 0)
-                    : instance?.value
-                }
-                workflowId={projectGraph.id}
-                onChange={onValueChange}
-                onSeedModeChange={onSeedModeChange}
-              />
+              {promptScope ? (
+                <WorkflowPromptField
+                  key={`${projectGraph.id}:${element.id}`}
+                  id={valueInputId}
+                  invalid={isInvalid}
+                  label={label}
+                  projectId={projectId}
+                  scope={promptScope}
+                  value={typeof instance?.value === 'string' ? instance.value : ''}
+                  onChange={onValueChange}
+                />
+              ) : (
+                <WorkflowFieldInput
+                  disabled={ratiosDisabled}
+                  formSettings={formSettings}
+                  id={valueInputId}
+                  invalid={isInvalid}
+                  nodeId={nodeId}
+                  seedMode={getWorkflowFieldSeedMode(instance)}
+                  template={getHiDiffusionRatioTemplate(invocationNode, effectiveTemplate, connectedFields)}
+                  value={
+                    isHiDiffusionNode(invocationNode.data.type) && isHiDiffusionRatioField(fieldName)
+                      ? (instance?.value ?? 0)
+                      : instance?.value
+                  }
+                  workflowId={projectGraph.id}
+                  onChange={onValueChange}
+                  onSeedModeChange={onSeedModeChange}
+                />
+              )}
             </Box>
             {showsShuffle ? (
               <Tooltip content={t('common.shuffle')}>

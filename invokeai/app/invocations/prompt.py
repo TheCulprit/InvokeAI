@@ -21,9 +21,7 @@ _PROMPT_FILES_DIR_HINT = "the prompt files directory (`prompt_files_dir`, defaul
     title="Dynamic Prompt",
     tags=["prompt", "collection"],
     category="prompt",
-    # 1.1.0: wildcards now resolve against the queueing user's records, and an
-    # unresolvable one fails the invocation instead of silently repeating a prompt.
-    version="1.1.0",
+    version="1.2.0",
     use_cache=False,
 )
 class DynamicPromptInvocation(BaseInvocation):
@@ -35,12 +33,18 @@ class DynamicPromptInvocation(BaseInvocation):
     )
     max_prompts: int = InputField(default=1, description="The number of prompts to generate")
     combinatorial: bool = InputField(default=False, description="Whether to use the combinatorial generator")
+    seed: Optional[int] = InputField(
+        default=None,
+        ge=-1,
+        description="Seed for random prompt expansion. Leave blank or enter -1 for a fresh random draw.",
+    )
 
     def invoke(self, context: InvocationContext) -> StringCollectionOutput:
         expanded = expand_dynamic_prompt(
             self.prompt,
             max_prompts=self.max_prompts,
             combinatorial=self.combinatorial,
+            seed=None if self.seed == -1 else self.seed,
             wildcard_manager=context.wildcards.get_manager(),
         )
 

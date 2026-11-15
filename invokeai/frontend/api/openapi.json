@@ -35229,6 +35229,24 @@
             "title": "Combinatorial",
             "type": "boolean"
           },
+          "seed": {
+            "anyOf": [
+              {
+                "minimum": -1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Seed for random prompt expansion. Leave blank or enter -1 for a fresh random draw.",
+            "field_kind": "input",
+            "input": "any",
+            "orig_default": null,
+            "orig_required": false,
+            "title": "Seed"
+          },
           "type": {
             "const": "dynamic_prompt",
             "default": "dynamic_prompt",
@@ -35241,7 +35259,7 @@
         "tags": ["prompt", "collection"],
         "title": "Dynamic Prompt",
         "type": "object",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "output": {
           "$ref": "#/components/schemas/StringCollectionOutput"
         }

@@ -12888,6 +12888,12 @@ export type components = {
              */
             combinatorial?: boolean;
             /**
+             * Seed
+             * @description Seed for random prompt expansion. Leave blank or enter -1 for a fresh random draw.
+             * @default null
+             */
+            seed?: number | null;
+            /**
              * type
              * @default dynamic_prompt
              * @constant

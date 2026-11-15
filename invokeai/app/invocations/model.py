@@ -1,7 +1,7 @@
 import copy
-from typing import List, Optional
+from typing import Annotated, Any, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from invokeai.app.invocations.baseinvocation import (
     BaseInvocation,
@@ -85,6 +85,18 @@ class ModelIdentifierField(BaseModel):
 class LoRAField(BaseModel):
     lora: ModelIdentifierField = Field(description="Info to load lora model")
     weight: float = Field(description="Weight to apply to lora model")
+
+
+def _filter_disabled_lora_entries(value: Any) -> Any:
+    # The workflow saves disabled entries with their weights. An invocation only receives the active entries.
+    if isinstance(value, list):
+        return [entry for entry in value if not (isinstance(entry, dict) and entry.get("isEnabled") is False)]
+    if isinstance(value, dict) and value.get("isEnabled") is False:
+        return []
+    return value
+
+
+LoRACollectionInput = Annotated[LoRAField | list[LoRAField] | None, BeforeValidator(_filter_disabled_lora_entries)]
 
 
 class UNetField(BaseModel):
@@ -512,7 +524,7 @@ class LoRASelectorInvocation(BaseInvocation):
 class LoRACollectionLoader(BaseInvocation):
     """Applies a collection of LoRAs to the provided UNet and CLIP models."""
 
-    loras: Optional[LoRAField | list[LoRAField]] = InputField(
+    loras: LoRACollectionInput = InputField(
         default=None,
         description="LoRA models and weights. May be a single LoRA or collection.",
         title="LoRAs",
@@ -666,7 +678,7 @@ class SDXLLoRALoaderInvocation(BaseInvocation):
 class SDXLLoRACollectionLoader(BaseInvocation):
     """Applies a collection of SDXL LoRAs to the provided UNet and CLIP models."""
 
-    loras: Optional[LoRAField | list[LoRAField]] = InputField(
+    loras: LoRACollectionInput = InputField(
         default=None,
         description="LoRA models and weights. May be a single LoRA or collection.",
         title="LoRAs",

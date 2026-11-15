@@ -45,7 +45,12 @@ export const getPromptLoraScope = (
     pending.push(...inputs);
     if (!inputs.length) {
       for (const entry of toLoraFieldCollectionList(node.data.inputs.loras?.value)) {
-        if (isLoraFieldCollectionEntry(entry) && entry.weight !== null && entry.weight !== 0) {
+        if (
+          isLoraFieldCollectionEntry(entry) &&
+          entry.isEnabled !== false &&
+          entry.weight !== null &&
+          entry.weight !== 0
+        ) {
           keys.add(entry.lora.key);
         }
       }

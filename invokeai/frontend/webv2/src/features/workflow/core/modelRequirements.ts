@@ -259,7 +259,7 @@ export const extractWorkflowModelRequirements = (
         const entries = toLoraFieldCollectionList(value);
 
         for (const entry of entries) {
-          if (isLoraFieldCollectionEntry(entry)) {
+          if (isLoraFieldCollectionEntry(entry) && entry.isEnabled !== false) {
             addExactRequirement(entry.lora);
           }
         }

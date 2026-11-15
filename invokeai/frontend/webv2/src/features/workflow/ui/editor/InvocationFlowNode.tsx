@@ -733,6 +733,7 @@ const InputFieldRow = ({
           ) : (
             <Box mt="0.5" w="full">
               <WorkflowFieldInput
+                compact
                 disabled={ratiosDisabled}
                 id={`${node.id}-${template.name}-value`}
                 invalid={isInvalid}

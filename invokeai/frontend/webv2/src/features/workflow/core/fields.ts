@@ -219,6 +219,7 @@ export const getFieldRecordId = (value: unknown, prop: string): string | null =>
 
 /** A LoRA model identifier paired with its weight — one entry of a LoRA collection field. `null` is a cleared weight. */
 export interface LoraFieldCollectionEntry {
+  isEnabled?: boolean;
   lora: { base: string; hash: string; key: string; name: string; type: string };
   weight: number | null;
 }
@@ -241,9 +242,10 @@ export const isLoraFieldCollectionEntry = (value: unknown): value is LoraFieldCo
     return false;
   }
 
-  const entry = value as { lora?: unknown; weight?: unknown };
+  const entry = value as { isEnabled?: unknown; lora?: unknown; weight?: unknown };
 
   return (
+    (entry.isEnabled === undefined || typeof entry.isEnabled === 'boolean') &&
     ['base', 'hash', 'key', 'name', 'type'].every((prop) => hasNonEmptyStringProp(entry.lora, prop)) &&
     (entry.weight === null || (typeof entry.weight === 'number' && Number.isFinite(entry.weight)))
   );
@@ -253,6 +255,10 @@ const getLoraCollectionInvalidReason = (items: readonly unknown[]): string | nul
   for (const [index, item] of items.entries()) {
     if (!isLoraFieldCollectionEntry(item)) {
       return `Item ${index + 1} is not a readable LoRA.`;
+    }
+
+    if (item.isEnabled === false) {
+      continue;
     }
 
     if (item.weight === null) {

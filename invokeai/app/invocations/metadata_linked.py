@@ -29,6 +29,7 @@ from invokeai.app.invocations.flux.flux_denoise import FluxDenoiseInvocation
 from invokeai.app.invocations.metadata import LoRAMetadataField, MetadataOutput
 from invokeai.app.invocations.model import (
     CLIPField,
+    LoRACollectionInput,
     LoRAField,
     LoRALoaderOutput,
     ModelIdentifierField,
@@ -933,7 +934,7 @@ class MetadataToLorasCollectionInvocation(BaseInvocation, WithMetadata):
         description=FieldDescriptions.metadata_item_label,
         input=Input.Direct,
     )
-    loras: Optional[LoRAField | list[LoRAField]] = InputField(
+    loras: LoRACollectionInput = InputField(
         default=[], description="LoRA models and weights. May be a single LoRA or collection.", title="LoRAs"
     )
 
@@ -953,8 +954,7 @@ class MetadataToLorasCollectionInvocation(BaseInvocation, WithMetadata):
         added_loras: list[str] = []
 
         for lora in input_loras:
-            assert lora is LoRAField
-            if lora.lora.key in added_loras:
+            if lora is None or lora.lora.key in added_loras:
                 continue
             output.lora.append(lora)
             added_loras.append(lora.lora.key)

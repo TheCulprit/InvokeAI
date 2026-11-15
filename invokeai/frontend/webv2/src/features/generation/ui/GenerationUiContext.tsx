@@ -210,8 +210,10 @@ export const GenerationUiProvider = ({ adapter, children }: { adapter: Generatio
   <GenerationUiContext value={adapter}>{children}</GenerationUiContext>
 );
 
+export const useOptionalGenerationUi = (): GenerationUiAdapter | null => use(GenerationUiContext);
+
 export const useGenerationUi = (): GenerationUiAdapter => {
-  const adapter = use(GenerationUiContext);
+  const adapter = useOptionalGenerationUi();
 
   if (!adapter) {
     throw new Error('Generation UI requires an App-composed GenerationUiProvider.');

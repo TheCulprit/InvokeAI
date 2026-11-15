@@ -7,7 +7,14 @@ from invokeai.app.invocations.baseinvocation import (
     invocation_output,
 )
 from invokeai.app.invocations.fields import FieldDescriptions, Input, InputField, OutputField
-from invokeai.app.invocations.model import CLIPField, LoRAField, ModelIdentifierField, T5EncoderField, TransformerField
+from invokeai.app.invocations.model import (
+    CLIPField,
+    LoRACollectionInput,
+    LoRAField,
+    ModelIdentifierField,
+    T5EncoderField,
+    TransformerField,
+)
 from invokeai.app.services.shared.invocation_context import InvocationContext
 from invokeai.backend.model_manager.taxonomy import BaseModelType, ModelType
 
@@ -116,7 +123,7 @@ class FluxLoRALoaderInvocation(BaseInvocation):
 class FLUXLoRACollectionLoader(BaseInvocation):
     """Applies a collection of LoRAs to a FLUX transformer."""
 
-    loras: Optional[LoRAField | list[LoRAField]] = InputField(
+    loras: LoRACollectionInput = InputField(
         default=None,
         description="LoRA models and weights. May be a single LoRA or collection.",
         title="LoRAs",

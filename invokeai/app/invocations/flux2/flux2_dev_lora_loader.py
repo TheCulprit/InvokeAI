@@ -15,6 +15,7 @@ from invokeai.app.invocations.baseinvocation import (
 )
 from invokeai.app.invocations.fields import FieldDescriptions, Input, InputField, OutputField
 from invokeai.app.invocations.model import (
+    LoRACollectionInput,
     LoRAField,
     MistralEncoderField,
     ModelIdentifierField,
@@ -124,7 +125,7 @@ class Flux2DevLoRALoaderInvocation(BaseInvocation):
 class Flux2DevLoRACollectionLoader(BaseInvocation):
     """Apply a collection of LoRAs to a FLUX.2 [dev] transformer and/or Mistral encoder."""
 
-    loras: Optional[LoRAField | list[LoRAField]] = InputField(
+    loras: LoRACollectionInput = InputField(
         default=None,
         description="LoRA models and weights. May be a single LoRA or collection.",
         title="LoRAs",

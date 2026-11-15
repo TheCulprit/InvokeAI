@@ -1,3 +1,4 @@
+import type { ConceptUpdate } from '@features/generation/components';
 import type { ModelConfig, ModelTaxonomyType } from '@features/models/react';
 import type { FieldInputTemplate } from '@features/workflow/contracts';
 import type { WorkflowLibraryPage, WorkflowRecordDTO } from '@features/workflow/data/api';
@@ -47,6 +48,7 @@ import {
 } from '@features/gallery/queries';
 import { useHostGalleryBoards, useOptionalGalleryHostProjectContext } from '@features/gallery/react';
 import { galleryImageUrls, galleryVideoUrls } from '@features/gallery/utility';
+import { ConceptList, WorkflowConceptRow } from '@features/generation/components';
 import { DEFAULT_LORA_WEIGHT_CONFIG, sanitizeBatchCount, SCHEDULER_OPTIONS } from '@features/generation/settings';
 import { isInvocationNode } from '@features/workflow/contracts';
 import {
@@ -90,7 +92,6 @@ import {
   isLoraFieldWeightValid,
   isWorkflowCollectionItemValid,
   isWorkflowGeneratorFieldTypeName,
-  LORA_FIELD_WEIGHT_RANGE,
   toLoraFieldCollectionList,
 } from '@features/workflow/utility';
 import { planSeedSubmission, type SeedMode, wrapSeed } from '@platform/core/seed';
@@ -157,6 +158,8 @@ const FileFieldInput = lazy(() => import('./FileFieldInput').then((module) => ({
 export const getWorkflowSelectedGalleryImage = getSelectedGalleryImageFromValues;
 
 export interface WorkflowFieldInputProps {
+  /** The graph editor has less width for LoRA rows than the workflow form. */
+  compact?: boolean;
   id?: string;
   invalid?: boolean;
   disabled?: boolean;
@@ -1384,7 +1387,8 @@ const LORA_MODEL_TYPES: ModelTaxonomyType[] = ['lora'];
  * Edit LoRA collections by index so imported duplicate keys and unreadable entries remain independent and
  * preserved.
  */
-const LoRACollectionInput = ({ id, invalid, onChange, template, value }: WorkflowFieldInputProps) => {
+const LoRACollectionInput = ({ compact = false, id, invalid, onChange, template, value }: WorkflowFieldInputProps) => {
+  const { t } = useTranslation();
   // The raw list, unreadable items included — see `toLoraFieldCollectionList`.
   const entries = useMemo(() => toLoraFieldCollectionList(value), [value]);
   const selectedKeys = useMemo(
@@ -1423,11 +1427,11 @@ const LoRACollectionInput = ({ id, invalid, onChange, template, value }: Workflo
     (index: number) => commit(entries.filter((_, entryIndex) => entryIndex !== index)),
     [commit, entries]
   );
-  const onWeightChange = useCallback(
-    (index: number, weight: number | null) =>
+  const onUpdate = useCallback(
+    (index: number, patch: ConceptUpdate) =>
       commit(
         entries.map((entry, entryIndex) =>
-          entryIndex === index && isLoraFieldCollectionEntry(entry) ? { ...entry, weight } : entry
+          entryIndex === index && isLoraFieldCollectionEntry(entry) ? { ...entry, ...patch } : entry
         )
       ),
     [commit, entries]
@@ -1449,90 +1453,66 @@ const LoRACollectionInput = ({ id, invalid, onChange, template, value }: Workflo
         />
       </Suspense>
       {entries.length > 0 ? (
-        <Stack className="nowheel" gap="1" maxH="40" overflowY="auto" w="full">
-          {entries.map((item, index) => (
-            <LoRACollectionRow
-              key={isLoraFieldCollectionEntry(item) ? `${item.lora.key}-${index}` : `unreadable-${index}`}
-              entry={isLoraFieldCollectionEntry(item) ? item : null}
-              id={id}
-              index={index}
-              onRemove={onRemove}
-              onWeightChange={onWeightChange}
-            />
-          ))}
+        <Stack className="nodrag nowheel" maxH="64" overflowY="auto" w="full">
+          <ConceptList label={t('widgets.generate.concepts')} projectId={id ?? template.name}>
+            {entries.map((item, index) => (
+              <LoRACollectionRow
+                key={isLoraFieldCollectionEntry(item) ? `${item.lora.key}-${index}` : `unreadable-${index}`}
+                compact={compact}
+                entry={isLoraFieldCollectionEntry(item) ? item : null}
+                index={index}
+                onRemove={onRemove}
+                onUpdate={onUpdate}
+              />
+            ))}
+          </ConceptList>
         </Stack>
       ) : null}
     </Stack>
   );
 };
 
-/** The weight column edits a bounded float; the range is the same one the Generate LoRA controls use. */
-const LORA_WEIGHT_TEMPLATE: FieldInputTemplate = {
-  default: undefined,
-  description: '',
-  exclusiveMaximum: null,
-  exclusiveMinimum: null,
-  fieldKind: 'input',
-  input: 'direct',
-  maximum: LORA_FIELD_WEIGHT_RANGE.max,
-  minimum: LORA_FIELD_WEIGHT_RANGE.min,
-  multipleOf: null,
-  name: 'weight',
-  options: null,
-  required: true,
-  title: 'Weight',
-  type: { batch: false, cardinality: 'SINGLE', name: 'FloatField' },
-  uiChoiceLabels: null,
-  uiComponent: null,
-  uiHidden: false,
-  uiModelBase: null,
-  uiModelFormat: null,
-  uiModelType: null,
-  uiOrder: null,
-};
-
 const LoRACollectionRow = ({
+  compact,
   entry,
-  id,
   index,
   onRemove,
-  onWeightChange,
+  onUpdate,
 }: {
+  compact: boolean;
   entry: LoraFieldCollectionEntry | null;
-  id?: string;
   index: number;
   onRemove: (index: number) => void;
-  onWeightChange: (index: number, weight: number | null) => void;
+  onUpdate: (index: number, patch: ConceptUpdate) => void;
 }) => {
   const { t } = useTranslation();
-  const label = entry ? entry.lora.name : t('nodes.loraEntryUnreadable');
-  const removeLabel = t('nodes.loraEntryRemove', { name: label });
   const onRemoveClick = useCallback(() => onRemove(index), [index, onRemove]);
-  // The shared numeric control commits as typed; a cleared or out-of-range weight stays on screen and blocks
-  // invoking through the field's own reason instead of being clamped.
-  const onValueChange = useCallback(
-    (weight: unknown) => onWeightChange(index, typeof weight === 'number' ? weight : null),
-    [index, onWeightChange]
-  );
+  const update = useCallback((patch: ConceptUpdate) => onUpdate(index, patch), [index, onUpdate]);
+  const lora = entry?.lora;
+  const model = useMemo(() => (lora ? { ...lora, type: 'lora' as const } : null), [lora]);
 
+  if (entry && model) {
+    const isEnabled = entry.isEnabled !== false;
+    return (
+      <WorkflowConceptRow
+        compact={compact}
+        isEnabled={isEnabled}
+        model={model}
+        weight={entry.weight}
+        weightError={isEnabled && !isLoraFieldWeightValid(entry.weight) ? t('nodes.loraEntryInvalidWeight') : undefined}
+        onRemove={onRemoveClick}
+        onUpdate={update}
+      />
+    );
+  }
+
+  const label = t('nodes.loraEntryUnreadable');
+  const removeLabel = t('nodes.loraEntryRemove', { name: label });
   return (
-    <HStack gap="1" minW="0" w="full">
-      <Tooltip content={entry ? label : t('nodes.loraEntryUnreadableHint')}>
-        <MiddleTruncate color={entry ? undefined : 'fg.error'} flex="1" fontSize="xs" minW="0" text={label} />
+    <HStack gap="1" minW="0" role="listitem" w="full">
+      <Tooltip content={t('nodes.loraEntryUnreadableHint')}>
+        <MiddleTruncate color="fg.error" flex="1" fontSize="xs" minW="0" text={label} />
       </Tooltip>
-      {entry ? (
-        <Field.Root flexShrink="0" invalid={!isLoraFieldWeightValid(entry.weight)} w="16">
-          <NumericInput
-            ariaLabel={t('nodes.loraEntryWeight', { name: label })}
-            id={id ? `${id}-lora-${index}` : undefined}
-            invalid={!isLoraFieldWeightValid(entry.weight)}
-            step={DEFAULT_LORA_WEIGHT_CONFIG.coarseStep}
-            template={LORA_WEIGHT_TEMPLATE}
-            value={entry.weight ?? undefined}
-            onChange={onValueChange}
-          />
-        </Field.Root>
-      ) : null}
       <IconButton
         aria-label={removeLabel}
         className="nodrag"

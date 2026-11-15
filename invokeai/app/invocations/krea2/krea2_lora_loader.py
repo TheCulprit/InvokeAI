@@ -7,7 +7,13 @@ from invokeai.app.invocations.baseinvocation import (
     invocation_output,
 )
 from invokeai.app.invocations.fields import FieldDescriptions, Input, InputField, OutputField
-from invokeai.app.invocations.model import LoRAField, ModelIdentifierField, Qwen3VLEncoderField, TransformerField
+from invokeai.app.invocations.model import (
+    LoRACollectionInput,
+    LoRAField,
+    ModelIdentifierField,
+    Qwen3VLEncoderField,
+    TransformerField,
+)
 from invokeai.app.services.shared.invocation_context import InvocationContext
 from invokeai.backend.model_manager.taxonomy import BaseModelType, ModelType
 
@@ -113,7 +119,7 @@ class Krea2LoRALoaderInvocation(BaseInvocation):
 class Krea2LoRACollectionLoader(BaseInvocation):
     """Applies a collection of LoRAs to a Krea-2 transformer and/or Qwen3-VL encoder."""
 
-    loras: Optional[LoRAField | list[LoRAField]] = InputField(
+    loras: LoRACollectionInput = InputField(
         default=None, description="LoRA models and weights. May be a single LoRA or collection.", title="LoRAs"
     )
     transformer: Optional[TransformerField] = InputField(

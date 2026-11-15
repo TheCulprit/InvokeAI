@@ -9,7 +9,7 @@ from invokeai.app.invocations.baseinvocation import (
 )
 from invokeai.app.invocations.fields import FieldDescriptions, Input, InputField, OutputField
 from invokeai.app.invocations.metadata import LoRAMetadataField
-from invokeai.app.invocations.model import LoRAField, ModelIdentifierField, TransformerField
+from invokeai.app.invocations.model import LoRACollectionInput, LoRAField, ModelIdentifierField, TransformerField
 from invokeai.app.services.shared.invocation_context import InvocationContext
 from invokeai.backend.model_manager.taxonomy import BaseModelType, ModelType
 
@@ -111,7 +111,7 @@ class ErnieImageLoRALoaderInvocation(BaseInvocation):
 class ErnieImageLoRACollectionLoader(BaseInvocation):
     """Apply a collection of LoRAs to an ERNIE-Image transformer."""
 
-    loras: Optional[LoRAField | list[LoRAField]] = InputField(
+    loras: LoRACollectionInput = InputField(
         default=None,
         description="LoRAs to apply. May be a single LoRA or a collection.",
         title="LoRAs",

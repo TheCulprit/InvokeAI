@@ -1,10 +1,11 @@
 /* oxlint-disable react-perf/jsx-no-jsx-as-prop, react-perf/jsx-no-new-function-as-prop, react-perf/jsx-no-new-object-as-prop -- ListItem slots take JSX; the React Compiler memoizes them. */
 import type { ConceptUpdate } from '@features/generation/core/conceptList';
-import type { GenerateLora } from '@features/generation/core/types';
+import type { GenerateLora, LoraModelConfig } from '@features/generation/core/types';
 import type { MouseEvent, ReactNode } from 'react';
 
 import { Avatar, Badge, Box, Flex, Icon, Menu, Portal } from '@chakra-ui/react';
 import { DEFAULT_LORA_WEIGHT_CONFIG, getDefaultLoraWeight } from '@features/generation/core/settings';
+import { useOptionalGenerationUi } from '@features/generation/ui/GenerationUiContext';
 import { useDebouncedDraftValue } from '@features/generation/ui/useDebouncedDraftValue';
 import { useRegisterDraftFlusher } from '@platform/react/draftRegistry';
 import { useExitRetainedValue } from '@platform/react/useExitRetainedValue';
@@ -14,14 +15,28 @@ import { ListStack } from '@platform/ui/list/ListStack';
 import { MenuActionItem, MenuContent, useContextMenu } from '@platform/ui/Menu';
 import { ScrubberField } from '@platform/ui/ScrubberField';
 import { Tooltip } from '@platform/ui/Tooltip';
-import { BoxIcon, ExternalLinkIcon, PowerIcon, PowerOffIcon, RotateCcwIcon, Trash2Icon } from 'lucide-react';
-import { createContext, memo, use, useCallback } from 'react';
+import {
+  BoxIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ExternalLinkIcon,
+  PowerIcon,
+  PowerOffIcon,
+  RotateCcwIcon,
+  Trash2Icon,
+} from 'lucide-react';
+import { createContext, memo, use, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { GenerateFieldContextMenu } from './GenerateFieldContextMenu';
 import { GenerateRowSwitch } from './GenerateToggleSwitch';
 
 const WEIGHT_MARKS = [-1, 0, 1, 2];
+const FALLBACK_MODELS: ConceptModelPort = {
+  getBaseColorPalette: () => 'gray',
+  getBaseLabel: (base) => base,
+  getImageUrl: () => '',
+};
 
 /** The model catalog's helpers a concept row needs; the caller supplies them through its own UI port. */
 export interface ConceptModelPort {
@@ -167,7 +182,57 @@ export const ConceptRow = memo(function ConceptRow(props: ConceptRowProps) {
   return <ConceptRowContent key={projectId} {...props} weight={weight} onUpdate={update} />;
 });
 
+/** Workflow weights preview locally, then commit one graph edit for the complete gesture. */
+export const WorkflowConceptRow = ({
+  compact,
+  isEnabled,
+  model,
+  onRemove,
+  onUpdate,
+  weight,
+  weightError,
+}: {
+  compact: boolean;
+  isEnabled: boolean;
+  model: LoraModelConfig;
+  onRemove: () => void;
+  onUpdate: (update: ConceptUpdate) => void;
+  weight: number | null;
+  weightError?: string;
+}) => {
+  const models = useOptionalGenerationUi()?.models;
+  const installed = models?.catalog.find((item) => item.type === 'lora' && item.key === model.key);
+  const resolved = installed ? { ...installed, type: 'lora' as const } : model;
+  const [preview, setPreview] = useState<number | null>(null);
+  const value = preview ?? weight ?? getDefaultLoraWeight(resolved);
+  const update = useCallback((_key: string, patch: ConceptUpdate) => onUpdate(patch), [onUpdate]);
+  const commitWeight = useCallback(
+    (next: number) => {
+      setPreview(null);
+      if (next !== weight) {
+        onUpdate({ weight: next });
+      }
+    },
+    [onUpdate, weight]
+  );
+
+  return (
+    <ConceptRowContent
+      compact={compact}
+      lora={{ isEnabled, model: resolved, weight: value }}
+      models={models ?? FALLBACK_MODELS}
+      weight={value}
+      weightError={weightError}
+      onPreviewWeight={setPreview}
+      onRemove={onRemove}
+      onUpdate={update}
+      onWeightChangeEnd={commitWeight}
+    />
+  );
+};
+
 const ConceptRowContent = ({
+  compact = false,
   isCompatible: isCompatibleModel = true,
   isInstalled = true,
   issue,
@@ -176,7 +241,16 @@ const ConceptRowContent = ({
   onRemove,
   onUpdate,
   weight,
-}: ConceptRowProps & { weight: number }) => {
+  weightError,
+  onPreviewWeight,
+  onWeightChangeEnd,
+}: ConceptRowProps & {
+  compact?: boolean;
+  weight: number;
+  weightError?: string;
+  onPreviewWeight?: (weight: number) => void;
+  onWeightChangeEnd?: (weight: number) => void;
+}) => {
   const { t } = useTranslation();
   const { key, name, trigger_phrases: triggerPhrases } = lora.model;
   // A concept that is not installed cannot run either; the row says which of the two it is.
@@ -188,6 +262,16 @@ const ConceptRowContent = ({
   const { release: releaseMenu, value: shownAnchor } = useExitRetainedValue(menu.anchor);
   const handleToggle = useCallback((isEnabled: boolean) => onUpdate(key, { isEnabled }), [key, onUpdate]);
   const handleWeightChange = useCallback((weight: number) => onUpdate(key, { weight }), [key, onUpdate]);
+  const stepWeight = useCallback(
+    (direction: number) => {
+      const { coarseStep, numberInputMin, numberInputMax } = DEFAULT_LORA_WEIGHT_CONFIG;
+      const next = Math.round((weight + coarseStep * direction) * 1e10) / 1e10;
+      onWeightChangeEnd?.(Math.min(numberInputMax, Math.max(numberInputMin, next)));
+    },
+    [onWeightChangeEnd, weight]
+  );
+  const handleIncrease = useCallback(() => stepWeight(1), [stepWeight]);
+  const handleDecrease = useCallback(() => stepWeight(-1), [stepWeight]);
   const removeFrom = useCallback(
     (origin: Element | null) => {
       const neighbour = findNeighbourRow(origin);
@@ -210,7 +294,11 @@ const ConceptRowContent = ({
     <Box role="listitem">
       {/* Naming the group gives the row's "Weight" slider and controls their concept's context. */}
       {/* Only a concept the model skips is dimmed; one that is missing but on blocks Invoke and stays at full strength. */}
-      <Box aria-label={name} opacity={isCompatibleModel ? 1 : 0.68} role="group">
+      <Box
+        aria-label={name}
+        opacity={isCompatibleModel && !(onWeightChangeEnd && !lora.isEnabled) ? 1 : 0.68}
+        role="group"
+      >
         <ListItem
           actions={
             <Flex gap={1}>
@@ -257,7 +345,7 @@ const ConceptRowContent = ({
           description={triggerPhrases?.length ? triggerPhrases.join(', ') : undefined}
           detail={
             // Backed with the settings section's surface so the row's hover tint never washes out the track and fill.
-            <Box bg="bg.muted" rounded="control">
+            <Flex align="flex-start" bg="bg.muted" rounded="control">
               <GenerateFieldContextMenu
                 fieldLabel={t('widgets.generate.conceptWeightNamed', { name })}
                 copyValue={copyWeight}
@@ -268,6 +356,7 @@ const ConceptRowContent = ({
                 <ScrubberField
                   defaultValue={defaultWeight}
                   disabled={!isActive}
+                  error={weightError}
                   hint="loraWeight"
                   inputMax={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMax}
                   inputMin={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMin}
@@ -277,12 +366,41 @@ const ConceptRowContent = ({
                   min={DEFAULT_LORA_WEIGHT_CONFIG.sliderMin}
                   step={DEFAULT_LORA_WEIGHT_CONFIG.coarseStep}
                   value={weight}
-                  onChange={handleWeightChange}
+                  onChange={onPreviewWeight ?? handleWeightChange}
+                  onChangeEnd={onWeightChangeEnd}
                 />
               </GenerateFieldContextMenu>
-            </Box>
+              {onWeightChangeEnd ? (
+                <Flex direction="column" flexShrink={0}>
+                  <IconButton
+                    aria-label={t('widgets.generate.increaseConceptWeight', { name })}
+                    disabled={!isActive || weight >= DEFAULT_LORA_WEIGHT_CONFIG.numberInputMax}
+                    h="3.5"
+                    minH="0"
+                    minW="5"
+                    size="xs"
+                    variant="ghost"
+                    onClick={handleIncrease}
+                  >
+                    <ChevronUpIcon />
+                  </IconButton>
+                  <IconButton
+                    aria-label={t('widgets.generate.decreaseConceptWeight', { name })}
+                    disabled={!isActive || weight <= DEFAULT_LORA_WEIGHT_CONFIG.numberInputMin}
+                    h="3.5"
+                    minH="0"
+                    minW="5"
+                    size="xs"
+                    variant="ghost"
+                    onClick={handleDecrease}
+                  >
+                    <ChevronDownIcon />
+                  </IconButton>
+                </Flex>
+              ) : null}
+            </Flex>
           }
-          density="snug"
+          density={compact ? 'compact' : 'snug'}
           leading={
             <Avatar.Root
               bg="bg.muted"
@@ -291,7 +409,7 @@ const ConceptRowContent = ({
               color="fg.subtle"
               flexShrink={0}
               shape="rounded"
-              size="xl"
+              size={compact ? 'lg' : 'xl'}
             >
               {/* The fallback also covers a cover image that fails to load. */}
               <Avatar.Fallback>

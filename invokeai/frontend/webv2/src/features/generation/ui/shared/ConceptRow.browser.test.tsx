@@ -26,7 +26,7 @@ const openInModelManager = vi.fn();
 const MODELS: ConceptModelPort = {
   getBaseColorPalette: () => 'gray',
   getBaseLabel: (base) => base,
-  getImageUrl: () => PIXEL,
+  getImageUrl: (_key, _cacheKey, size) => (size === 'preview' ? `${PIXEL}#preview` : PIXEL),
   openInModelManager,
 };
 
@@ -181,11 +181,18 @@ describe('ConceptRow', () => {
     expect(onUpdate).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the model cover as its thumbnail', async () => {
+  it('shows the model cover as its thumbnail and previews it on hover', async () => {
     const row = await render(makeLora({ cover_image: 'cover.png' }));
 
     await expect.poll(() => row.querySelector('img')?.getAttribute('data-state')).toBe('visible');
-    expect(row.querySelector('img')?.getAttribute('src')).toBe(PIXEL);
+    const thumbnail = row.querySelector('img')!;
+    expect(thumbnail.getAttribute('src')).toBe(PIXEL);
+    await act(() => userEvent.hover(thumbnail));
+    const preview = () => document.querySelector<HTMLImageElement>('[role="tooltip"][data-state="open"] img');
+    await expect.poll(() => preview()?.src).toBe(`${PIXEL}#preview`);
+    expect(preview()!.getBoundingClientRect().width).toBeGreaterThan(thumbnail.getBoundingClientRect().width);
+    await act(() => userEvent.unhover(thumbnail));
+    await expect.poll(preview).toBeNull();
   });
 
   it('falls back to a model icon without a cover', async () => {

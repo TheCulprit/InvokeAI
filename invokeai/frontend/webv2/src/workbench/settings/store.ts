@@ -22,7 +22,7 @@ import {
 } from '@platform/state/accountLifecycle';
 import { createExternalStore } from '@platform/state/externalStore';
 import { createSingleFlight } from '@platform/state/singleFlight';
-import { isPromptFontSize } from '@theme/scale';
+import { isModelPreviewSize, isPromptFontSize } from '@theme/scale';
 import { DEFAULT_THEME_ID, resolveWorkbenchThemeId } from '@theme/themes';
 import { deleteClientStateValue, getClientStateValue, setClientStateValue } from '@workbench/projects/api';
 import { fetchSessionBlob } from '@workbench/projects/session';
@@ -66,6 +66,7 @@ export const DEFAULT_PREFERENCES: WorkbenchPreferences = {
   launchpadPinnedProjectIds: [],
   launchpadProjectsSort: 'edited',
   launchpadProjectsView: 'grid',
+  modelPreviewSize: 'medium',
   notifyOnEnqueue: true,
   preferNumericAttentionStyle: false,
   promptFontSize: 'default',
@@ -479,6 +480,9 @@ export const normalizeWorkbenchPreferences = (preferences?: WorkbenchPreferences
     typeof preferences?.preferNumericAttentionStyle === 'boolean'
       ? preferences.preferNumericAttentionStyle
       : DEFAULT_PREFERENCES.preferNumericAttentionStyle,
+  modelPreviewSize: isModelPreviewSize(preferences?.modelPreviewSize)
+    ? preferences.modelPreviewSize
+    : DEFAULT_PREFERENCES.modelPreviewSize,
   promptFontSize: isPromptFontSize(preferences?.promptFontSize)
     ? preferences.promptFontSize
     : DEFAULT_PREFERENCES.promptFontSize,

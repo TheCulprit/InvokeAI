@@ -4635,6 +4635,18 @@
               "title": "Key"
             },
             "description": "The name of model image file to get"
+          },
+          {
+            "name": "preview",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Serve the full-size upload when available",
+              "default": false,
+              "title": "Preview"
+            },
+            "description": "Serve the full-size upload when available"
           }
         ],
         "responses": {

@@ -1,6 +1,6 @@
 import { useMountEffect } from '@platform/react/useMountEffect';
 import { shallowEqual } from '@platform/state/selectors';
-import { applyPromptFontSizeToRoot, applyThemeToRoot } from '@theme/applyTheme';
+import { applyModelPreviewSizeToRoot, applyPromptFontSizeToRoot, applyThemeToRoot } from '@theme/applyTheme';
 import { DEFAULT_THEME, THEMES_BY_ID } from '@theme/system';
 import { subscribeWorkbenchPreferences, useWorkbenchSettingsSelector } from '@workbench/settings/store';
 import { useLayoutEffect } from 'react';
@@ -71,9 +71,12 @@ export const ThemeController = () => {
     }
   }, [hasResolved, highContrast]);
 
-  // No pre-paint hint: prompt fields are not on screen before settings resolve.
+  // Prompt fields and on-demand image previews can use the CSS defaults until settings resolve.
   useMountEffect(() =>
-    subscribeWorkbenchPreferences(({ promptFontSize }) => applyPromptFontSizeToRoot(promptFontSize))
+    subscribeWorkbenchPreferences(({ modelPreviewSize, promptFontSize }) => {
+      applyModelPreviewSizeToRoot(modelPreviewSize);
+      applyPromptFontSizeToRoot(promptFontSize);
+    })
   );
 
   return null;

@@ -92,8 +92,20 @@ export const convertModelToDiffusers = (key: string, signal?: AbortSignal): Prom
   requestJson<ModelConfig>(`${MODELS_BASE}/convert/${encodeURIComponent(key)}`, { method: 'PUT', signal });
 
 /** Stable URL for a model's cover image; cache-busted via updated marker. */
-export const getModelImageUrl = (key: string, cacheKey?: string): string =>
-  buildUrl(`${MODELS_BASE}/i/${encodeURIComponent(key)}/image${cacheKey ? `?t=${encodeURIComponent(cacheKey)}` : ''}`);
+export const getModelImageUrl = (
+  key: string,
+  cacheKey?: string,
+  size: 'thumbnail' | 'preview' = 'thumbnail'
+): string => {
+  const params = new URLSearchParams();
+  if (cacheKey) {
+    params.set('t', cacheKey);
+  }
+  if (size === 'preview') {
+    params.set('preview', 'true');
+  }
+  return buildUrl(`${MODELS_BASE}/i/${encodeURIComponent(key)}/image${params.size ? `?${params}` : ''}`);
+};
 
 export const updateModelImage = async (key: string, image: Blob, signal?: AbortSignal): Promise<void> => {
   const formData = new FormData();

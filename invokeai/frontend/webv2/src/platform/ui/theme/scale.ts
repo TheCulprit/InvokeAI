@@ -24,6 +24,14 @@ export const PROMPT_FONT_SIZE = `var(${PROMPT_FONT_SIZE_PROPERTY}, ${PROMPT_FONT
 export const isPromptFontSize = (value: unknown): value is PromptFontSize =>
   typeof value === 'string' && Object.hasOwn(PROMPT_FONT_SIZES, value);
 
+export const MODEL_PREVIEW_WIDTHS = { small: '10rem', medium: '16rem', large: '24rem' } as const;
+export type ModelPreviewSize = keyof typeof MODEL_PREVIEW_WIDTHS;
+export const MODEL_PREVIEW_WIDTH_PROPERTY = '--model-preview-width';
+export const MODEL_PREVIEW_WIDTH = `var(${MODEL_PREVIEW_WIDTH_PROPERTY}, ${MODEL_PREVIEW_WIDTHS.medium})`;
+
+export const isModelPreviewSize = (value: unknown): value is ModelPreviewSize =>
+  typeof value === 'string' && Object.hasOwn(MODEL_PREVIEW_WIDTHS, value);
+
 interface TypeStep {
   fontSize: string;
   letterSpacing?: string;

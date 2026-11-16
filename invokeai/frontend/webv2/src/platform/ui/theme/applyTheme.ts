@@ -1,4 +1,11 @@
-import { PROMPT_FONT_SIZE_PROPERTY, PROMPT_FONT_SIZES, type PromptFontSize } from './scale';
+import {
+  MODEL_PREVIEW_WIDTH_PROPERTY,
+  MODEL_PREVIEW_WIDTHS,
+  PROMPT_FONT_SIZE_PROPERTY,
+  PROMPT_FONT_SIZES,
+  type ModelPreviewSize,
+  type PromptFontSize,
+} from './scale';
 import { DEFAULT_THEME, THEMES_BY_ID } from './themes';
 
 /** Apply root theme attributes without persisting hints; transient previews must not overwrite saved appearance. */
@@ -15,4 +22,8 @@ export const applyThemeToRoot = (themeId: string): void => {
 
 export const applyPromptFontSizeToRoot = (size: PromptFontSize): void => {
   document.documentElement.style.setProperty(PROMPT_FONT_SIZE_PROPERTY, PROMPT_FONT_SIZES[size]);
+};
+
+export const applyModelPreviewSizeToRoot = (size: ModelPreviewSize): void => {
+  document.documentElement.style.setProperty(MODEL_PREVIEW_WIDTH_PROPERTY, MODEL_PREVIEW_WIDTHS[size]);
 };

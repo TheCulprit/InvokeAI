@@ -1,4 +1,5 @@
 import type { ModelConfig } from '@features/models';
+import type * as ModelApi from '@features/models/data/api';
 
 import { ChakraProvider, Field as ChakraField } from '@chakra-ui/react';
 import { setModelsSnapshotForTests } from '@features/models/data/modelsStore';
@@ -7,6 +8,8 @@ import { ModelsUiProvider, NO_SCHEDULER_POLICY } from '@features/models/ui/Model
 import { getModelsUiSnapshotForTests } from '@features/models/ui/uiStore';
 import { auditAccessibility, contrastOffenderTexts } from '@platform/browser/auditAccessibility.testing';
 import { Field } from '@platform/ui/Field';
+import { applyModelPreviewSizeToRoot } from '@theme/applyTheme';
+import { MODEL_PREVIEW_WIDTH_PROPERTY } from '@theme/scale';
 import { system } from '@theme/system';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -14,6 +17,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 
 import { ModelSelect } from './ModelSelect';
+
+vi.mock('@features/models/data/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof ModelApi>()),
+  getModelImageUrl: (_key: string, _cacheKey?: string, size?: 'thumbnail' | 'preview') => {
+    const pixel =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XcX1WQAAAABJRU5ErkJggg==';
+    return size === 'preview' ? `${pixel}#preview` : pixel;
+  },
+}));
 
 // Browser tests run without an i18n provider, so translated copy renders as
 // the raw key (e.g. 'models.compactRows'); assertions below match the keys.
@@ -224,6 +236,37 @@ describe('ModelSelect loading states', () => {
 
   const optionTexts = (): string[] =>
     [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent ?? '');
+
+  it('previews model covers in the picker and on the selected model without blocking a click', async () => {
+    const covered = { ...model, cover_image: 'cover.png' };
+    const onChange = vi.fn();
+    setModelsSnapshotForTests({ error: null, models: [covered], status: 'loaded' });
+    await renderPicker({ value: covered.key, onChange });
+
+    const thumbnail = document.querySelector<HTMLImageElement>('[role="option"] img')!;
+    const preview = () => document.querySelector<HTMLImageElement>('[role="tooltip"][data-state="open"] img');
+    const hoverPreview = async (image: HTMLImageElement) => {
+      await act(() => userEvent.hover(image));
+      await expect.poll(() => preview()?.src).toBe(`${image.src}#preview`);
+      expect(preview()!.getBoundingClientRect().width).toBeGreaterThan(image.getBoundingClientRect().width);
+    };
+
+    await hoverPreview(thumbnail);
+    await act(() => userEvent.click(thumbnail));
+    expect(onChange).toHaveBeenCalledWith(covered);
+    await expect.poll(preview).toBeNull();
+    await hoverPreview(host.querySelector<HTMLImageElement>('[aria-haspopup="listbox"] img')!);
+
+    const mediumWidth = preview()!.getBoundingClientRect().width;
+    try {
+      applyModelPreviewSizeToRoot('small');
+      expect(preview()!.getBoundingClientRect().width).toBeLessThan(mediumWidth);
+      applyModelPreviewSizeToRoot('large');
+      expect(preview()!.getBoundingClientRect().width).toBeGreaterThan(mediumWidth);
+    } finally {
+      document.documentElement.style.removeProperty(MODEL_PREVIEW_WIDTH_PROPERTY);
+    }
+  });
 
   // Cross-type pickers must not repeat Main Models headings for every base.
   it('groups a cross-type picker by base alone, with no type header', async () => {

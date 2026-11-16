@@ -38,6 +38,19 @@ const section = (id: string, label: string, fields: readonly SettingDefinition[]
 export const appearanceSettings = section('appearance', 'Appearance', [
   custom('themeId', 'Theme'),
   {
+    id: 'modelPreviewSize',
+    label: text('modelPreviewSize.label', 'Model preview size'),
+    description: text('modelPreviewSize.description'),
+    keywords: 'model cover thumbnail hover tooltip',
+    kind: 'select',
+    scope: 'preference',
+    options: [
+      { value: 'small', label: text('options.small', 'Small') },
+      { value: 'medium', label: text('options.medium', 'Medium') },
+      { value: 'large', label: text('options.large', 'Large') },
+    ],
+  },
+  {
     id: 'language',
     label: text('language.label', 'Language'),
     kind: 'select',

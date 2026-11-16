@@ -1,4 +1,5 @@
 import os
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -158,3 +159,28 @@ def test_get_url_returns_none_for_an_over_long_key(storage: ModelImageFileStorag
     """`exists()` raises ENAMETOOLONG rather than returning False, and `get_url()` runs for every model in the list
     response - so an over-long stored key must not fail the whole listing."""
     assert storage.get_url("a" * 300) is None
+
+
+def test_replacing_moving_and_deleting_a_cover_also_updates_its_preview(storage: ModelImageFileStorageDisk):
+    image = Image.new("RGB", (512, 384))
+    for image_format in ("JPEG", "PNG"):
+        upload = BytesIO()
+        image.save(upload, format=image_format)
+        with Image.open(upload) as decoded:
+            storage.save(decoded, "source", original_bytes=upload.getvalue())
+
+    preview = storage.get_preview_path("source")
+    assert preview is not None and preview.name == "source.png"
+    assert list(preview.parent.iterdir()) == [preview]
+    thumbnail = storage.get_path("source").read_bytes()
+
+    storage.move("source", "converted")
+    moved_preview = storage.get_preview_path("converted")
+    assert moved_preview is not None and moved_preview.read_bytes() == upload.getvalue()
+    assert storage.get_path("converted").read_bytes() == thumbnail
+    assert storage.get_preview_path("source") is None
+    assert not storage.get_path("source").exists()
+
+    storage.delete("converted")
+    assert storage.get_preview_path("converted") is None
+    assert not storage.get_path("converted").exists()

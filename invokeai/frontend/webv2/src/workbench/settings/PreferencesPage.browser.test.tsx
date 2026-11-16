@@ -184,6 +184,16 @@ describe('Launchpad preferences page', () => {
     await expect.poll(() => getWorkbenchPreferences().reduceMotion).toBe(true);
   });
 
+  it('selects a model preview size from Appearance', async () => {
+    await render('/preferences/appearance');
+
+    const size = page.getByRole('combobox', { name: 'Model preview size', exact: true });
+    await expect.element(size).toHaveTextContent('Medium');
+    await act(() => size.click());
+    await act(() => page.getByRole('option', { name: 'Large', exact: true }).click());
+    await expect.poll(() => getWorkbenchPreferences().modelPreviewSize).toBe('large');
+  });
+
   it('narrows sections while searching and reveals a result in its section', async () => {
     const router = await render('/preferences/appearance');
 

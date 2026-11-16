@@ -1,7 +1,7 @@
 import type { WorkbenchLanguage } from '@platform/i18n/languages';
 import type { LogLevel, LogNamespace } from '@platform/logging/contracts';
 import type { SettingsTarget } from '@platform/ui/settings/contracts';
-import type { PromptFontSize } from '@theme/scale';
+import type { ModelPreviewSize, PromptFontSize } from '@theme/scale';
 import type { WorkbenchThemeId } from '@theme/themes';
 import type { ProjectSortId, ProjectsViewId } from '@workbench/launchpad/projects/projectLibraryView';
 
@@ -97,6 +97,7 @@ export interface WorkbenchPreferences {
   /** Server version whose What's New notes were last dismissed; a different version shows them once. */
   whatsNewSeenVersion: string | null;
   themeId: WorkbenchThemeId;
+  modelPreviewSize: ModelPreviewSize;
   reduceMotion: boolean;
   showFocusRegionHighlight: boolean;
   confirmImageDeletion: boolean;

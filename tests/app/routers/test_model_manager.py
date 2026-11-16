@@ -847,7 +847,7 @@ def test_conversion_cleans_scratch_after_success_and_ordinary_failure(
         def delete(self, _key: str) -> None:
             return None
 
-    def model_image(_key: str) -> None:
+    def move_model_image(_key: str, _new_key: str) -> None:
         raise ModelImageFileNotFoundException()
 
     services = SimpleNamespace(
@@ -861,7 +861,7 @@ def test_conversion_cleans_scratch_after_success_and_ordinary_failure(
             install=Installer(),
         ),
         configuration=SimpleNamespace(models_path=models_path),
-        model_images=SimpleNamespace(get=model_image),
+        model_images=SimpleNamespace(move=move_model_image),
         logger=MagicMock(),
     )
     monkeypatch.setattr(model_manager_router, "ApiDependencies", MockApiDependencies(DummyInvoker(services)))
@@ -1530,6 +1530,38 @@ def test_an_encoded_key_reaches_the_image_route_intact(client: TestClient, tmp_p
 
     assert response.status_code == 200
     deps.invoker.services.model_images.get_path.assert_called_once_with("X?y")
+
+
+def test_model_image_preview_serves_the_upload_or_falls_back_to_the_thumbnail(
+    client: TestClient, real_model_images
+) -> None:
+    from io import BytesIO
+    from unittest.mock import patch
+
+    key = "model-key"
+    url = f"/api/v2/models/i/{key}/image"
+    image = Image.new("RGB", (512, 384))
+    real_model_images.save(image, key)
+    with patch.object(ApiDependencies, "invoker", create=True) as invoker:
+        invoker.services.model_images = real_model_images
+        invoker.services.configuration.multiuser = False
+        thumbnail = client.get(url)
+        fallback = client.get(url, params={"preview": "true"})
+        assert thumbnail.status_code == fallback.status_code == 200
+        assert thumbnail.headers["content-type"] == fallback.headers["content-type"] == "image/webp"
+        assert fallback.content == thumbnail.content
+
+        contents = BytesIO()
+        image.save(contents, format="JPEG", quality=80)
+        upload = contents.getvalue()
+        assert client.patch(url, files={"image": ("cover.jpg", upload, "image/jpeg")}).status_code == 200
+        preview = client.get(url, params={"preview": "true"})
+        thumbnail = client.get(url)
+        assert preview.status_code == thumbnail.status_code == 200
+        assert preview.headers["content-type"] == "image/jpeg"
+        assert preview.content == upload
+        with Image.open(BytesIO(thumbnail.content)) as decoded_thumbnail:
+            assert decoded_thumbnail.size == (256, 192)
 
 
 def test_the_orphan_routes_scan_with_the_model_records(

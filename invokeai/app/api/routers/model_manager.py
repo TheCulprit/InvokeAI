@@ -669,19 +669,24 @@ async def update_model_record(
 )
 def get_model_image(
     key: str = Path(description="The name of model image file to get"),
+    preview: Annotated[bool, Query(description="Serve the full-size upload when available")] = False,
 ) -> FileResponse:
     """Gets an image file that previews the model"""
 
     try:
-        path = ApiDependencies.invoker.services.model_images.get_path(key)
+        model_images = ApiDependencies.invoker.services.model_images
+        path = model_images.get_preview_path(key) if preview else None
+        path = path or model_images.get_path(key)
+        if not path.is_file():
+            raise FileNotFoundError
 
         response = FileResponse(
             path,
-            media_type="image/png",
-            filename=key + ".png",
+            media_type="image/jpeg" if path.suffix == ".jpg" else f"image/{path.suffix[1:]}",
+            filename=path.name,
             content_disposition_type="inline",
         )
-        response.headers["Cache-Control"] = f"max-age={IMAGE_MAX_AGE}"
+        response.headers["Cache-Control"] = "no-cache" if preview else f"max-age={IMAGE_MAX_AGE}"
         return response
     except Exception:
         raise HTTPException(status_code=404)
@@ -741,7 +746,8 @@ async def update_model_image(
             raise HTTPException(status_code=415, detail="Failed to read image")
 
         try:
-            await asyncio.to_thread(model_images.save, pil_image, key)
+            with pil_image:
+                await asyncio.to_thread(model_images.save, pil_image, key, original_bytes=contents)
             logger.info(f"Updated image for model: {key}")
         except ValueError as e:
             logger.error(str(e))
@@ -1457,9 +1463,7 @@ def _convert_model(key: str, user_id: str) -> AnyModelConfig:
 
             # Update the model image if the model had one.
             try:
-                model_image = ApiDependencies.invoker.services.model_images.get(key)
-                ApiDependencies.invoker.services.model_images.save(model_image, new_key)
-                ApiDependencies.invoker.services.model_images.delete(key)
+                ApiDependencies.invoker.services.model_images.move(key, new_key)
             except ModelImageFileNotFoundException:
                 pass
 

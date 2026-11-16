@@ -61593,7 +61593,10 @@ export interface operations {
     };
     get_model_image: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Serve the full-size upload when available */
+                preview?: boolean;
+            };
             header?: never;
             path: {
                 /** @description The name of model image file to get */

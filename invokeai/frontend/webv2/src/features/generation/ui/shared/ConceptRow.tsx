@@ -10,6 +10,7 @@ import { useDebouncedDraftValue } from '@features/generation/ui/useDebouncedDraf
 import { useRegisterDraftFlusher } from '@platform/react/draftRegistry';
 import { useExitRetainedValue } from '@platform/react/useExitRetainedValue';
 import { IconButton } from '@platform/ui/Button';
+import { ImagePreviewTooltip } from '@platform/ui/ImagePreviewTooltip';
 import { ListItem } from '@platform/ui/list/ListItem';
 import { ListStack } from '@platform/ui/list/ListStack';
 import { MenuActionItem, MenuContent, useContextMenu } from '@platform/ui/Menu';
@@ -42,7 +43,7 @@ const FALLBACK_MODELS: ConceptModelPort = {
 export interface ConceptModelPort {
   getBaseColorPalette(base: string): string;
   getBaseLabel(base: string): string;
-  getImageUrl(key: string): string;
+  getImageUrl(key: string, cacheKey?: string, size?: 'thumbnail' | 'preview'): string;
   /** Absent when this session may not manage models; the row then offers no manager link. */
   openInModelManager?: (key: string) => void;
 }
@@ -253,6 +254,23 @@ const ConceptRowContent = ({
 }) => {
   const { t } = useTranslation();
   const { key, name, trigger_phrases: triggerPhrases } = lora.model;
+  const coverUrl = lora.model.cover_image ? models.getImageUrl(key) : null;
+  const thumbnail = (
+    <Avatar.Root
+      bg="bg.muted"
+      borderColor="border"
+      borderWidth="1px"
+      color="fg.subtle"
+      flexShrink={0}
+      shape="rounded"
+      size={compact ? 'lg' : 'xl'}
+    >
+      <Avatar.Fallback>
+        <Icon as={BoxIcon} boxSize="4" />
+      </Avatar.Fallback>
+      {coverUrl ? <Avatar.Image alt="" src={coverUrl} /> : null}
+    </Avatar.Root>
+  );
   // A concept that is not installed cannot run either; the row says which of the two it is.
   const isCompatible = isCompatibleModel && isInstalled;
   const isActive = lora.isEnabled && isCompatible;
@@ -402,21 +420,11 @@ const ConceptRowContent = ({
           }
           density={compact ? 'compact' : 'snug'}
           leading={
-            <Avatar.Root
-              bg="bg.muted"
-              borderColor="border"
-              borderWidth="1px"
-              color="fg.subtle"
-              flexShrink={0}
-              shape="rounded"
-              size={compact ? 'lg' : 'xl'}
-            >
-              {/* The fallback also covers a cover image that fails to load. */}
-              <Avatar.Fallback>
-                <Icon as={BoxIcon} boxSize="4" />
-              </Avatar.Fallback>
-              {lora.model.cover_image ? <Avatar.Image alt="" src={models.getImageUrl(key)} /> : null}
-            </Avatar.Root>
+            coverUrl ? (
+              <ImagePreviewTooltip src={models.getImageUrl(key, undefined, 'preview')}>{thumbnail}</ImagePreviewTooltip>
+            ) : (
+              thumbnail
+            )
           }
           isMenuOpen={menu.anchor !== null}
           role="presentation"

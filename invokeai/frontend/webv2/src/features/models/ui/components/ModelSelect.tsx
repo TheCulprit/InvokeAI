@@ -29,6 +29,7 @@ import { useMountEffect } from '@platform/react/useMountEffect';
 import { areArraysEqual } from '@platform/state/selectors';
 import { Button, CloseButton, IconButton, PopoverContent, Tooltip } from '@platform/ui';
 import { useFieldLabelId } from '@platform/ui/Field';
+import { ImagePreviewTooltip } from '@platform/ui/ImagePreviewTooltip';
 import { MiddleTruncate } from '@platform/ui/MiddleTruncate';
 import { Picker } from '@platform/ui/Picker';
 import { Link } from '@tanstack/react-router';
@@ -534,12 +535,22 @@ const BaseChip = ({
 
 const ModelButtonContent = ({ id, model }: { id: string; model: ModelConfig }) => (
   <HStack as="span" id={id} flex="1" gap="2" minW="0">
+    {model.cover_image ? <ModelPickerThumbnail modelKey={model.key} size="5" /> : null}
     <MiddleTruncate as="span" minW="0" text={model.name} />
     <Badge colorPalette={getModelBaseColorPalette(model.base)} flexShrink={0} fontSize="xs" size="lg" variant="surface">
       {getModelBaseLabel(model.base)}
     </Badge>
   </HStack>
 );
+
+const ModelPickerThumbnail = ({ modelKey, size }: { modelKey: string; size: '5' | '8' }) => {
+  const src = getModelImageUrl(modelKey);
+  return (
+    <ImagePreviewTooltip src={getModelImageUrl(modelKey, undefined, 'preview')}>
+      <Image alt="" boxSize={size} flexShrink={0} objectFit="cover" rounded="sm" src={src} />
+    </ImagePreviewTooltip>
+  );
+};
 
 const ModelOptionContent = ({
   enableDescription,
@@ -571,9 +582,7 @@ const ModelOptionContent = ({
         flexShrink={0}
         opacity={state.isSelected ? 1 : 0}
       />
-      {showDetail && model.cover_image ? (
-        <Image alt="" boxSize="8" flexShrink={0} objectFit="cover" rounded="sm" src={getModelImageUrl(model.key)} />
-      ) : null}
+      {showDetail && model.cover_image ? <ModelPickerThumbnail modelKey={model.key} size="8" /> : null}
       <Stack flex="1" gap="0" minW="0">
         <HStack gap="1.5" minW="0">
           {isRelated ? (

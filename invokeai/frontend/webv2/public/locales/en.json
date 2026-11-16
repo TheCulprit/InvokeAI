@@ -2686,8 +2686,13 @@
         "label": "Prompt text size",
         "description": "Size of the text in prompt fields."
       },
+      "modelPreviewSize": {
+        "label": "Model preview size",
+        "description": "Size of the cover image shown when you hover over a model thumbnail."
+      },
       "options": {
         "small": "Small",
+        "medium": "Medium",
         "default": "Default",
         "large": "Large",
         "larger": "Larger",

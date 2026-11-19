@@ -20,11 +20,13 @@ import {
   BoxIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  EqualIcon,
   ExternalLinkIcon,
   PowerIcon,
   PowerOffIcon,
   RotateCcwIcon,
   Trash2Icon,
+  XIcon,
 } from 'lucide-react';
 import { createContext, memo, use, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -129,6 +131,56 @@ const findControlBeforeList = (slots: ListSlot[]): HTMLElement | null => {
 
 const ConceptProjectContext = createContext<string | undefined>(undefined);
 
+interface ConceptWeightFieldProps {
+  copyValue: () => string;
+  defaultWeight: number;
+  disabled: boolean;
+  fieldLabel: string;
+  label: string;
+  onChange: (value: number) => void;
+  onReset: () => void;
+  resetLabel: string;
+  value: number;
+}
+
+const ConceptWeightField = ({
+  copyValue,
+  defaultWeight,
+  disabled,
+  fieldLabel,
+  label,
+  onChange,
+  onReset,
+  resetLabel,
+  value,
+}: ConceptWeightFieldProps) => (
+  // Backed with the widget's surface so the row's hover tint never washes out the track and fill.
+  <Box bg="var(--wb-field-surface, var(--chakra-colors-bg-subtle))" rounded="control">
+    <GenerateFieldContextMenu
+      fieldLabel={fieldLabel}
+      copyValue={copyValue}
+      isAtDefault={value === defaultWeight}
+      resetLabel={resetLabel}
+      onReset={onReset}
+    >
+      <ScrubberField
+        defaultValue={defaultWeight}
+        disabled={disabled}
+        hint="loraWeight"
+        inputMax={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMax}
+        inputMin={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMin}
+        label={label}
+        marks={WEIGHT_MARKS}
+        max={DEFAULT_LORA_WEIGHT_CONFIG.sliderMax}
+        min={DEFAULT_LORA_WEIGHT_CONFIG.sliderMin}
+        step={DEFAULT_LORA_WEIGHT_CONFIG.coarseStep}
+        value={value}
+        onChange={onChange}
+      />
+    </GenerateFieldContextMenu>
+  </Box>
+);
+
 /** A short concept list shares its project lifetime with the rows' drafts and menus. */
 export const ConceptList = ({
   children,
@@ -157,6 +209,10 @@ export const ConceptRow = memo(function ConceptRow(props: ConceptRowProps) {
     (weight: number) => onUpdate(lora.model.key, { weight }),
     [lora.model.key, onUpdate]
   );
+  const commitLowNoiseWeight = useCallback(
+    (lowNoiseWeight: number) => onUpdate(lora.model.key, { lowNoiseWeight }),
+    [lora.model.key, onUpdate]
+  );
   const {
     draftValue: weight,
     flushDraftValue,
@@ -167,20 +223,48 @@ export const ConceptRow = memo(function ConceptRow(props: ConceptRowProps) {
     resetKey: projectId,
     value: lora.weight,
   });
+  const {
+    draftValue: lowNoiseWeight,
+    flushDraftValue: flushLowNoiseDraftValue,
+    replaceDraftValue: replaceLowNoiseDraftValue,
+    setDraftValue: setLowNoiseDraftValue,
+  } = useDebouncedDraftValue({
+    delayMs: 250,
+    onCommit: commitLowNoiseWeight,
+    resetKey: projectId,
+    value: lora.lowNoiseWeight ?? lora.weight,
+  });
   useRegisterDraftFlusher(flushDraftValue);
+  useRegisterDraftFlusher(flushLowNoiseDraftValue);
   const update = useCallback(
-    (key: string, update: ConceptUpdate) => {
-      if (update.weight === undefined) {
-        onUpdate(key, update);
-      } else {
-        setDraftValue(update.weight);
+    (key: string, nextUpdate: ConceptUpdate) => {
+      if (nextUpdate.lowNoiseWeight === null || nextUpdate.target === null) {
+        // Discard any queued low-noise commit so a pending timer cannot resurrect cleared routing.
+        replaceLowNoiseDraftValue(lora.weight);
+      }
+      if (nextUpdate.weight !== undefined) {
+        setDraftValue(nextUpdate.weight);
+      }
+      if (typeof nextUpdate.lowNoiseWeight === 'number') {
+        setLowNoiseDraftValue(nextUpdate.lowNoiseWeight);
+      }
+      if (nextUpdate.weight === undefined && typeof nextUpdate.lowNoiseWeight !== 'number') {
+        onUpdate(key, nextUpdate);
       }
     },
-    [onUpdate, setDraftValue]
+    [lora.weight, onUpdate, replaceLowNoiseDraftValue, setDraftValue, setLowNoiseDraftValue]
   );
 
   // Reset the menu on project changes without remounting/flushing the weight draft into the next project.
-  return <ConceptRowContent key={projectId} {...props} weight={weight} onUpdate={update} />;
+  return (
+    <ConceptRowContent
+      key={projectId}
+      {...props}
+      lowNoiseWeight={lora.lowNoiseWeight !== undefined ? lowNoiseWeight : undefined}
+      weight={weight}
+      onUpdate={update}
+    />
+  );
 });
 
 /** Workflow weights preview locally, then commit one graph edit for the complete gesture. */
@@ -238,6 +322,7 @@ const ConceptRowContent = ({
   isInstalled = true,
   issue,
   lora,
+  lowNoiseWeight,
   models,
   onRemove,
   onUpdate,
@@ -247,6 +332,7 @@ const ConceptRowContent = ({
   onWeightChangeEnd,
 }: ConceptRowProps & {
   compact?: boolean;
+  lowNoiseWeight?: number;
   weight: number;
   weightError?: string;
   onPreviewWeight?: (weight: number) => void;
@@ -274,6 +360,7 @@ const ConceptRowContent = ({
   // A concept that is not installed cannot run either; the row says which of the two it is.
   const isCompatible = isCompatibleModel && isInstalled;
   const isActive = lora.isEnabled && isCompatible;
+  const isSplitWeight = lowNoiseWeight !== undefined;
   const defaultWeight = getDefaultLoraWeight(lora.model);
   const menu = useContextMenu();
   // Kept through the exit animation: the anchor clears the moment the menu closes.
@@ -290,6 +377,10 @@ const ConceptRowContent = ({
   );
   const handleIncrease = useCallback(() => stepWeight(1), [stepWeight]);
   const handleDecrease = useCallback(() => stepWeight(-1), [stepWeight]);
+  const handleLowNoiseWeightChange = useCallback(
+    (nextLowNoiseWeight: number) => onUpdate(key, { lowNoiseWeight: nextLowNoiseWeight }),
+    [key, onUpdate]
+  );
   const removeFrom = useCallback(
     (origin: Element | null) => {
       const neighbour = findNeighbourRow(origin);
@@ -305,7 +396,18 @@ const ConceptRowContent = ({
     [removeFrom]
   );
   const handleReset = useCallback(() => onUpdate(key, { weight: defaultWeight }), [defaultWeight, key, onUpdate]);
+  const handleResetLowNoise = useCallback(
+    () => onUpdate(key, { lowNoiseWeight: defaultWeight }),
+    [defaultWeight, key, onUpdate]
+  );
+  const handleResetRowWeights = useCallback(
+    () => onUpdate(key, { weight: defaultWeight, ...(isSplitWeight ? { lowNoiseWeight: defaultWeight } : {}) }),
+    [defaultWeight, isSplitWeight, key, onUpdate]
+  );
+  const handleUseSingleWeight = useCallback(() => onUpdate(key, { lowNoiseWeight: null }), [key, onUpdate]);
+  const handleClearTarget = useCallback(() => onUpdate(key, { target: null, lowNoiseWeight: null }), [key, onUpdate]);
   const copyWeight = useCallback(() => String(weight), [weight]);
+  const copyLowNoiseWeight = useCallback(() => String(lowNoiseWeight ?? weight), [lowNoiseWeight, weight]);
   const { openInModelManager } = models;
 
   return (
@@ -346,10 +448,15 @@ const ConceptRowContent = ({
           }
           // The model type sits under the name, with the trigger phrases beside it on the same line.
           description={
-            <Flex align="center" gap="1.5" minW="0">
+            <Flex align="center" flexWrap="wrap" gap="1.5" minW="0">
               <Badge colorPalette={models.getBaseColorPalette(lora.model.base)} flexShrink={0} variant="surface">
                 {models.getBaseLabel(lora.model.base)}
               </Badge>
+              {lora.target ? (
+                <Badge colorPalette="accent" flexShrink={0} variant="surface">
+                  {t(`widgets.generate.wanLoraTargets.${lora.target}`)}
+                </Badge>
+              ) : null}
               {isInstalled ? null : (
                 <Badge colorPalette="red" flexShrink={0} variant="solid">
                   {t('widgets.generate.notInstalled')}
@@ -368,61 +475,88 @@ const ConceptRowContent = ({
             </Flex>
           }
           detail={
-            // Backed with the widget's surface so the row's hover tint never washes out the track and fill.
-            <Flex align="flex-start" bg="var(--wb-field-surface, var(--chakra-colors-bg-subtle))" rounded="control">
-              <GenerateFieldContextMenu
-                fieldLabel={t('widgets.generate.conceptWeightNamed', { name })}
-                copyValue={copyWeight}
-                isAtDefault={weight === defaultWeight}
-                resetLabel={t('widgets.generate.resetToConceptDefault')}
-                onReset={handleReset}
-              >
-                <ScrubberField
-                  defaultValue={defaultWeight}
+            isSplitWeight ? (
+              <Flex direction="column" gap="1.5">
+                <ConceptWeightField
+                  copyValue={copyWeight}
+                  defaultWeight={defaultWeight}
                   disabled={!isActive}
-                  error={weightError}
-                  hint="loraWeight"
-                  inputMax={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMax}
-                  inputMin={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMin}
-                  label={t('widgets.generate.weight')}
-                  marks={WEIGHT_MARKS}
-                  max={DEFAULT_LORA_WEIGHT_CONFIG.sliderMax}
-                  min={DEFAULT_LORA_WEIGHT_CONFIG.sliderMin}
-                  step={DEFAULT_LORA_WEIGHT_CONFIG.coarseStep}
+                  fieldLabel={t('widgets.generate.conceptHighNoiseWeightNamed', { name })}
+                  label={t('widgets.generate.highNoiseWeight')}
+                  resetLabel={t('widgets.generate.resetToConceptDefault')}
                   value={weight}
-                  onChange={onPreviewWeight ?? handleWeightChange}
-                  onChangeEnd={onWeightChangeEnd}
+                  onChange={handleWeightChange}
+                  onReset={handleReset}
                 />
-              </GenerateFieldContextMenu>
-              {onWeightChangeEnd ? (
-                <Flex direction="column" flexShrink={0}>
-                  <IconButton
-                    aria-label={t('widgets.generate.increaseConceptWeight', { name })}
-                    disabled={!isActive || weight >= DEFAULT_LORA_WEIGHT_CONFIG.numberInputMax}
-                    h="3.5"
-                    minH="0"
-                    minW="5"
-                    size="xs"
-                    variant="ghost"
-                    onClick={handleIncrease}
-                  >
-                    <ChevronUpIcon />
-                  </IconButton>
-                  <IconButton
-                    aria-label={t('widgets.generate.decreaseConceptWeight', { name })}
-                    disabled={!isActive || weight <= DEFAULT_LORA_WEIGHT_CONFIG.numberInputMin}
-                    h="3.5"
-                    minH="0"
-                    minW="5"
-                    size="xs"
-                    variant="ghost"
-                    onClick={handleDecrease}
-                  >
-                    <ChevronDownIcon />
-                  </IconButton>
-                </Flex>
-              ) : null}
-            </Flex>
+                <ConceptWeightField
+                  copyValue={copyLowNoiseWeight}
+                  defaultWeight={defaultWeight}
+                  disabled={!isActive}
+                  fieldLabel={t('widgets.generate.conceptLowNoiseWeightNamed', { name })}
+                  label={t('widgets.generate.lowNoiseWeight')}
+                  resetLabel={t('widgets.generate.resetToConceptDefault')}
+                  value={lowNoiseWeight}
+                  onChange={handleLowNoiseWeightChange}
+                  onReset={handleResetLowNoise}
+                />
+              </Flex>
+            ) : (
+              // Backed with the widget's surface so the row's hover tint never washes out the track and fill.
+              <Flex align="flex-start" bg="var(--wb-field-surface, var(--chakra-colors-bg-subtle))" rounded="control">
+                <GenerateFieldContextMenu
+                  fieldLabel={t('widgets.generate.conceptWeightNamed', { name })}
+                  copyValue={copyWeight}
+                  isAtDefault={weight === defaultWeight}
+                  resetLabel={t('widgets.generate.resetToConceptDefault')}
+                  onReset={handleReset}
+                >
+                  <ScrubberField
+                    defaultValue={defaultWeight}
+                    disabled={!isActive}
+                    error={weightError}
+                    hint="loraWeight"
+                    inputMax={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMax}
+                    inputMin={DEFAULT_LORA_WEIGHT_CONFIG.numberInputMin}
+                    label={t('widgets.generate.weight')}
+                    marks={WEIGHT_MARKS}
+                    max={DEFAULT_LORA_WEIGHT_CONFIG.sliderMax}
+                    min={DEFAULT_LORA_WEIGHT_CONFIG.sliderMin}
+                    step={DEFAULT_LORA_WEIGHT_CONFIG.coarseStep}
+                    value={weight}
+                    onChange={onPreviewWeight ?? handleWeightChange}
+                    onChangeEnd={onWeightChangeEnd}
+                  />
+                </GenerateFieldContextMenu>
+                {onWeightChangeEnd ? (
+                  <Flex direction="column" flexShrink={0}>
+                    <IconButton
+                      aria-label={t('widgets.generate.increaseConceptWeight', { name })}
+                      disabled={!isActive || weight >= DEFAULT_LORA_WEIGHT_CONFIG.numberInputMax}
+                      h="3.5"
+                      minH="0"
+                      minW="5"
+                      size="xs"
+                      variant="ghost"
+                      onClick={handleIncrease}
+                    >
+                      <ChevronUpIcon />
+                    </IconButton>
+                    <IconButton
+                      aria-label={t('widgets.generate.decreaseConceptWeight', { name })}
+                      disabled={!isActive || weight <= DEFAULT_LORA_WEIGHT_CONFIG.numberInputMin}
+                      h="3.5"
+                      minH="0"
+                      minW="5"
+                      size="xs"
+                      variant="ghost"
+                      onClick={handleDecrease}
+                    >
+                      <ChevronDownIcon />
+                    </IconButton>
+                  </Flex>
+                ) : null}
+              </Flex>
+            )
           }
           density={compact ? 'compact' : 'snug'}
           leading={
@@ -467,11 +601,13 @@ const ConceptRowContent = ({
                   />
                 ) : null}
                 <MenuActionItem
-                  disabled={weight === defaultWeight || !isActive}
+                  disabled={
+                    (weight === defaultWeight && (!isSplitWeight || lowNoiseWeight === defaultWeight)) || !isActive
+                  }
                   icon={RotateCcwIcon}
                   label={t('widgets.generate.resetToConceptDefault')}
                   value="reset-weight"
-                  onSelect={handleReset}
+                  onSelect={handleResetRowWeights}
                 />
                 <MenuActionItem
                   disabled={!isCompatible}
@@ -482,6 +618,22 @@ const ConceptRowContent = ({
                   value="toggle"
                   onSelect={() => handleToggle(!isActive)}
                 />
+                {isSplitWeight ? (
+                  <MenuActionItem
+                    icon={EqualIcon}
+                    label={t('widgets.generate.conceptMenu.useSingleWeight')}
+                    value="use-single-weight"
+                    onSelect={handleUseSingleWeight}
+                  />
+                ) : null}
+                {lora.target !== undefined ? (
+                  <MenuActionItem
+                    icon={XIcon}
+                    label={t('widgets.generate.conceptMenu.clearExpertTarget')}
+                    value="clear-expert-target"
+                    onSelect={handleClearTarget}
+                  />
+                ) : null}
                 <Menu.Separator />
                 <MenuActionItem
                   icon={Trash2Icon}

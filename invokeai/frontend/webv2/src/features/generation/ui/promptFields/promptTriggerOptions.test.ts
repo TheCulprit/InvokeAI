@@ -68,7 +68,6 @@ describe('getInlineTriggerOptions', () => {
     expect(getInlineTriggerOptions(OPTIONS, '_', 'MO').map((option) => option.label)).toEqual(['moods']);
   });
 
-  // Exclude group labels from matching so __w cannot match every entry under Wildcards.
   it('ignores the group name, unlike the browse search', () => {
     expect(getInlineTriggerOptions(OPTIONS, '_', 'wildcard')).toEqual([]);
     expect(filterPromptTriggerOptions(OPTIONS, 'wildcard')).toHaveLength(2);

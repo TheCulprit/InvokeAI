@@ -14,8 +14,6 @@ export {
   getDynamicPromptsConfig,
   getDynamicPromptsSettingsPatch,
   getGenerateValuesRevertPatch,
-  getModelDefaultVae,
-  hasModelDefaultVae,
   isAspectRatioLocked,
   isFluxDypePreset,
   isIdeogram4SamplerPreset,
@@ -45,6 +43,7 @@ export {
   normalizeGenerateSettings,
   normalizeMossImageSkipLayers,
   normalizeGenerateWidgetValues,
+  normalizeReferenceImageName,
   normalizeReferenceImages,
   syncGenerateWidgetValuesWithModels,
 } from './core/settings';
@@ -53,7 +52,7 @@ export {
   createReferenceImageId,
   getCompatibleReferenceImages,
   getDefaultGenerateSettings,
-  withAddedReferenceImages,
+  addReferenceImages,
   getGenerateModelSelectionResult,
   isComponentCompatibleWithModel,
   getDimensionGrid,
@@ -61,16 +60,16 @@ export {
   getGenerateInvocationIssues,
   getGenerationModelAvailabilityReasons,
   getGenerationUiPolicy,
-  getMaxReferenceImages,
   getPromptHistoryRecallPatch,
-  getReferenceImageLimit,
+  getReferenceImageRoom,
   getSchedulerOptions,
   getSettingsWithModelDefaults,
+  getRecallDefaultVae,
+  resolveModelDefaultVae,
   isArchitectureDescribed,
   isGenerateModelSelectable,
   isKnownScheduler,
   isLossyModelSwitch,
-  isReferenceImageSupported,
   isSupportedGenerateModel,
   takesReferenceImages,
   NO_GENERATE_MODEL_ISSUE,
@@ -116,10 +115,12 @@ export {
   isDiffusersMainForBase,
   isFlux2MistralEncoder,
   isFlux2Qwen3EncoderForModel,
+  isMossImageQwen35Encoder,
   isQwen3Vl4bEncoder,
   isVaeAcceptedByBase,
   isVaeCompatibleWithGenerateModel,
   isZImageQwen3Encoder,
+  servesAsType,
 } from './core/componentCompatibility';
 export {
   getLockedAspectRatioSettings,
@@ -159,8 +160,13 @@ export {
   sanitizeSampleSeed,
   type DynamicPromptsConfig,
   type DynamicPromptsSeedBehaviour,
+  type GenerateSubmissionSource,
 } from './core/dynamicPrompts';
-export { getEffectivePrompts } from './core/promptTemplates';
+export {
+  flattenPromptTemplateExpansion,
+  getEffectivePrompts,
+  type PromptTemplateSnapshot,
+} from './core/promptTemplates';
 export {
   addPromptHistoryItem,
   getPromptHistoryItemFromGenerateSettings,

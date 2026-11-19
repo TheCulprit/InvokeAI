@@ -1,5 +1,6 @@
 import type { ControlLayerGraphInput } from '@features/generation/graph';
 import type { ModelConfig } from '@features/models';
+import type { ResolvedValues } from '@platform/core/resolvedValues';
 import type {
   AdjustmentRefusal,
   CanvasDocumentContractV3,
@@ -126,23 +127,23 @@ const buildCanvasSaveMetadata = (project: Project, rect: Rect): Record<string, u
   };
 };
 
-const toCanvasSaveBoardId = (galleryValues: Record<string, unknown>): string | undefined => {
+const toCanvasSaveBoardId = (galleryValues: ResolvedValues): string | undefined => {
   const boardId = getGalleryAutoAddBoardId(galleryValues, canAddToCachedGalleryBoard);
 
   return boardId !== null && boardId !== 'none' ? boardId : undefined;
 };
 
 /**
- * Where Canvas puts new gallery images: the project's auto-add board, or no board (Uncategorized), as the cached
- * board listing says. Callers resolve through `resolveCanvasSaveBoardId`, which has the listing read first.
+ * Where Canvas puts new gallery images: the project's auto-add board, or no board (Uncategorized), as the cached board
+ * listing says. Callers resolve through `resolveCanvasSaveBoardId`, which has the listing read first.
  */
 export const getCanvasSaveBoardId = (project: Project, scopedDefaults: ScopedDefaults): string | undefined =>
   toCanvasSaveBoardId(getResolvedProjectWidgetValues(project, 'gallery', scopedDefaults));
 
 /**
- * `getCanvasSaveBoardId` from a listing read first, so a board is never trusted unseen nor redirected for want of
- * one. The project's gallery values are read before anything is awaited: a later change to the project cannot
- * redirect a save already under way.
+ * `getCanvasSaveBoardId` from a listing read first, so a board is never trusted unseen nor redirected for want of one.
+ * The project's gallery values are read before anything is awaited: a later change to the project cannot redirect a
+ * save already under way.
  */
 export const resolveCanvasSaveBoardId = async (
   project: Project,
@@ -161,7 +162,7 @@ export const saveCanvasToGallery = async (options: {
   /** The originating project's current immutable state, read after export to pair metadata with its document. */
   getProject: (projectId: string) => Project | null;
   project: Project;
-  /** The user's defaults captured with `project`: the destination follows the Gallery's resolved settings. */
+  /** The user's defaults captured with `project`. */
   scopedDefaults: ScopedDefaults;
   uploadImage?: typeof uploadCanvasImage;
 }): Promise<SaveCanvasToGalleryResult> => {
@@ -181,7 +182,7 @@ export const saveCanvasToGallery = async (options: {
     if (!capturedProject || capturedProject.canvas.document !== exported.document) {
       return { status: 'stale' };
     }
-    const canvasValues = getProjectWidgetValues(capturedProject, 'canvas');
+    const canvasValues = getResolvedProjectWidgetValues(capturedProject, 'canvas', scopedDefaults);
     const metadata = {
       ...buildCanvasSaveMetadata(capturedProject, exported.rect),
       canvas_v3_metadata: recordCanvasMetadata(exported.document, {

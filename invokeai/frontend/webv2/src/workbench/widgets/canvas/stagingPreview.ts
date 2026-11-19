@@ -1,11 +1,7 @@
-/**
- * A finished candidate keeps comparison active while its preview is hidden. For a selected placeholder, show its
- * live progress frame when available. All preview pixels land at the rect pinned at submission.
- */
+/** Selected finished candidate, else the selected placeholder's progress frame, both at the submission rect. */
 
 import type { CanvasPlacementContract, Rect, StagedPreviewInput } from '@workbench/canvas-engine/api';
 
-/** Inputs to {@link selectStagedPreviewSource}. */
 export interface StagedPreviewSelection {
   /** Where the selected placeholder's result lands (its submitted rect); null when no placeholder is selected. */
   progressRect: Rect | null;
@@ -24,9 +20,8 @@ export const selectStagedPreviewSource = ({
   selectedCandidate,
 }: StagedPreviewSelection): StagedPreviewInput | null => {
   if (selectedCandidate) {
-    return isVisible
-      ? { imageName: selectedCandidate.imageName, placement: selectedCandidate.placement }
-      : { hidden: true };
+    const { imageName, placement } = selectedCandidate;
+    return isVisible ? { imageName, placement } : { hidden: true, imageName, placement };
   }
   if (progressRect && progressImage && progressRect.width > 0 && progressRect.height > 0) {
     // Progress frames are low-res latents of the submitted region; scale to fill it.
@@ -40,10 +35,10 @@ export const stagedPreviewKey = (source: StagedPreviewInput | null): string => {
   if (source === null) {
     return 'none';
   }
-  if ('hidden' in source) {
-    return 'hidden';
-  }
   const { placement } = source;
   const rect = `${placement.x}:${placement.y}:${placement.width}:${placement.height}:${placement.opacity}`;
-  return 'imageName' in source ? `image:${source.imageName}:${rect}` : `data:${rect}:${source.dataUrl}`;
+  if ('imageName' in source) {
+    return `${source.hidden ? 'hidden' : 'image'}:${source.imageName}:${rect}`;
+  }
+  return `data:${rect}:${source.dataUrl}`;
 };

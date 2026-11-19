@@ -29,11 +29,7 @@ const MODE_LABEL_KEYS: Record<ViewerAutoSwitchMode, string> = {
   progress: 'widgets.canvas.staging.autoSwitchProgress',
 };
 
-/**
- * Each mode's shape says what it does, on the trigger and its menu item alike: Off is a crossed-out follow target (the
- * view stays put), In progress a live trace (it follows a generation as it streams), Newest the front of a stack (it
- * jumps to each finished result). Pin is not used for Off: the Preview filmstrip already marks a pinned session with it.
- */
+/** Icons by meaning; Pin is not Off because the filmstrip already marks pinned sessions with it. */
 const MODE_ICONS: Record<ViewerAutoSwitchMode, LucideIcon> = {
   latest: GalleryHorizontalEndIcon,
   'latest-locked': LockIcon,
@@ -41,11 +37,7 @@ const MODE_ICONS: Record<ViewerAutoSwitchMode, LucideIcon> = {
   progress: ActivityIcon,
 };
 
-/**
- * Trigger styles per host, so it matches the controls beside it: a widget header's small, muted ghost buttons (24px,
- * 14px icons), or a floating toolbar's working-size ones (28px, 16px icons). The size recipe sets the icon, padding and
- * text, as it does for those neighbours.
- */
+/** Trigger styles per host: a widget header's ghost buttons or a floating toolbar's working size. */
 const TRIGGER_CHROME = {
   header: { button: { color: 'fg.muted', size: 'sm' } },
   toolbar: { button: { size: 'md' } },

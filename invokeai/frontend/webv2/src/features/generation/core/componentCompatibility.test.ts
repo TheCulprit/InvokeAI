@@ -9,7 +9,9 @@ import type { ComponentModelConfig, GenerateModelConfig, VaeModelConfig } from '
 
 import {
   getCompatibleSelectedComponentKey,
+  isAnimaQwen35Encoder,
   isAnimaQwen3Encoder,
+  isMossImageQwen35Encoder,
   isErnieImageMistralEncoder,
   isBundledFlux2Main,
   isFlux2EncoderSourceForModel,
@@ -21,6 +23,9 @@ import {
   isVaeAcceptedByBase,
   isVaeCompatibleWithGenerateModel,
   isZImageQwen3Encoder,
+  roleVariantOf,
+  servesAsType,
+  servesAsVariant,
   type GenerateComponentCandidate,
 } from './componentCompatibility';
 
@@ -172,17 +177,14 @@ describe('Generate component compatibility', () => {
     const diffusersDev = pipeline('diffusers', 'dev');
     const pipelines = [sdnqKlein, sdnqDev, diffusersKlein, diffusersDev];
 
-    // Any Diffusers pipeline gives [dev] its VAE; only a [dev] one its Mistral encoder.
     expect(pipelines.map(isFlux2PipelineForModel(flux2Model('dev')))).toEqual([false, false, true, true]);
     expect(pipelines.map(isFlux2EncoderSourceForModel(flux2Model('dev')))).toEqual([false, false, false, true]);
     expect(pipelines.map(isFlux2PipelineForModel(flux2Model('klein_9b')))).toEqual([true, true, true, true]);
     expect(pipelines.map(isFlux2EncoderSourceForModel(flux2Model('klein_9b')))).toEqual([true, false, true, false]);
-    // The selected install counts as bundled by the same rule.
     expect(pipelines.map(isBundledFlux2Main)).toEqual([true, false, true, true]);
   });
 
   it('keeps each Mistral-family encoder out of the other family slot', () => {
-    // Filter variants even when they share a model type.
     const ministral = candidate({ type: 'mistral_encoder', variant: 'ministral3_3b' });
     const mistralSmall3 = candidate({ type: 'mistral_encoder', variant: 'cow_mistral3_small' });
     const mistral24b = candidate({ type: 'mistral_encoder', variant: 'mistral3_24b' });
@@ -241,7 +243,6 @@ describe('Generate component compatibility', () => {
   });
 
   it('offers each Wan variant only the VAE width its decode accepts', () => {
-    // Wan A14B and 5B require compatible VAE channel widths.
     const wanMain = (variant: string) =>
       ({ base: 'wan', key: `wan-${variant}`, name: `Wan ${variant}`, type: 'main', variant }) as GenerateModelConfig;
     const wanVae = (latentChannels: number) =>
@@ -260,8 +261,56 @@ describe('Generate component compatibility', () => {
   });
 });
 
+describe('encoder predicates over roles', () => {
+  const textLlm = (roleType: string, roleVariant: string | null): GenerateComponentCandidate =>
+    candidate({ roles: [{ type: roleType, variant: roleVariant }], type: 'text_llm' });
+
+  it('answers primary type and role with the variant of the matching source', () => {
+    const withBothVariants = candidate({
+      roles: [{ type: 'qwen3_5_encoder', variant: 'qwen3_5_9b' }],
+      type: 'qwen3_encoder',
+      variant: 'qwen3_4b',
+    });
+
+    expect(servesAsType(withBothVariants, 'qwen3_encoder')).toBe(true);
+    expect(servesAsType(withBothVariants, 'qwen3_5_encoder')).toBe(true);
+    expect(servesAsType(withBothVariants, 'text_llm')).toBe(false);
+    expect(roleVariantOf(withBothVariants, 'qwen3_encoder')).toBe('qwen3_4b');
+    expect(roleVariantOf(withBothVariants, 'qwen3_5_encoder')).toBe('qwen3_5_9b');
+    expect(servesAsVariant(withBothVariants, 'qwen3_5_encoder', 'qwen3_4b')).toBe(false);
+  });
+
+  it.each([
+    ['Anima Qwen3', isAnimaQwen3Encoder, 'qwen3_encoder', 'qwen3_06b'],
+    ['Z-Image Qwen3', isZImageQwen3Encoder, 'qwen3_encoder', 'qwen3_4b'],
+    ['Anima Qwen3.5', isAnimaQwen35Encoder, 'qwen3_5_encoder', 'qwen3_5_4b'],
+    ['MOSS-Image Qwen3.5', isMossImageQwen35Encoder, 'qwen3_5_encoder', 'qwen3_5_9b'],
+  ] as const)(
+    '%s: primary match, role match, wrong role variant and a bare Text LLM',
+    (_name, predicate, type, variant) => {
+      expect(predicate(candidate({ type, variant }))).toBe(true);
+      expect(predicate(textLlm(type, variant))).toBe(true);
+      expect(predicate(textLlm(type, 'other_variant'))).toBe(false);
+      expect(predicate(textLlm(type, null))).toBe(false);
+      expect(predicate(candidate({ type: 'text_llm' }))).toBe(false);
+      // A role of another type with the right variant string does not count.
+      expect(predicate(textLlm(type === 'qwen3_encoder' ? 'qwen3_5_encoder' : 'qwen3_encoder', variant))).toBe(false);
+    }
+  );
+
+  it('takes a Qwen3 causal LM as the FLUX.2 Klein encoder by the variant of its role', () => {
+    const klein9b = isFlux2Qwen3EncoderForModel(flux2Model('klein_9b'));
+    const anyKlein = isFlux2Qwen3EncoderForModel({ base: 'flux2', key: 'k', name: 'k', type: 'main' });
+
+    expect(klein9b(textLlm('qwen3_encoder', 'qwen3_8b'))).toBe(true);
+    expect(klein9b(textLlm('qwen3_encoder', 'qwen3_4b'))).toBe(false);
+    expect(anyKlein(textLlm('qwen3_encoder', 'qwen3_4b'))).toBe(true);
+    expect(anyKlein(textLlm('qwen3_encoder', 'qwen3_06b'))).toBe(false);
+    expect(anyKlein(candidate({ type: 'text_llm' }))).toBe(false);
+  });
+});
+
 describe('the VAE filters and the backend declarations', () => {
-  // Exercise each variant row with its own variant.
   const mainOf = (base: string, variant: string | null = null) =>
     ({
       base,
@@ -282,7 +331,6 @@ describe('the VAE filters and the backend declarations', () => {
 
   const ALL_BASES = [...new Set(architectureCapabilitiesFixture.map((row) => row.base))];
 
-  /** Check parity with served VAE policy instead of duplicating frontend rules. */
   it('accepts every VAE base the backend declares for that architecture', () => {
     const declared = architectureCapabilitiesFixture.filter((row) => row.vae);
     expect(declared.length).toBeGreaterThan(0);
@@ -290,7 +338,6 @@ describe('the VAE filters and the backend declarations', () => {
     for (const row of declared) {
       for (const accepted of row.vae!.accepted) {
         expect(
-          // Only wan distinguishes VAEs by latent width; the others leave it null.
           isVaeCompatibleWithGenerateModel(
             mainOf(row.base, row.variant),
             vaeOf(accepted.base, accepted.latent_channels ?? undefined)
@@ -301,7 +348,6 @@ describe('the VAE filters and the backend declarations', () => {
     }
   });
 
-  /** Negative parity cases must reject an always-true filter. */
   it('rejects every VAE base the backend does not declare for that architecture', () => {
     for (const row of architectureCapabilitiesFixture) {
       const accepted = row.vae?.accepted ?? [{ base: row.base, latent_channels: null }];
@@ -317,7 +363,6 @@ describe('the VAE filters and the backend declarations', () => {
         ).toBe(false);
       }
 
-      // Same-base VAEs are still constrained by channel width.
       for (const entry of accepted) {
         if (entry.latent_channels === null) {
           continue;

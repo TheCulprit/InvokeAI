@@ -8,6 +8,7 @@ import {
   hasLinkableBase,
   isBaseCompatible,
   isLinkablePair,
+  isLinkableModel,
   isLinkableType,
   LINKABLE_TYPES,
   NULL_BASE_ALLOWANCES,
@@ -35,22 +36,17 @@ describe('isBaseCompatible', () => {
     expect(isBaseCompatible(model('anima', 'main'), model('wan', 'vae'))).toBe(true);
     expect(isBaseCompatible(model('anima', 'main'), model('qwen-image', 'vae'))).toBe(true);
     expect(isBaseCompatible(model('anima', 'main'), model('flux', 'vae'))).toBe(true);
-    // z_image_pid_decode reuses the FLUX PiD decoder.
     expect(isBaseCompatible(model('z-image', 'main'), model('flux', 'pid_decoder'))).toBe(true);
     // moss_image_model_loader takes the FLUX.2 VAE, and MOSS-Image decodes with flux2_pid_decode.
     expect(isBaseCompatible(model('moss-image', 'main'), model('flux2', 'vae'))).toBe(true);
     expect(isBaseCompatible(model('moss-image', 'main'), model('flux2', 'pid_decoder'))).toBe(true);
-    // The pairing is the VAE's and decoder's, not the base pair's: FLUX.2 LoRAs do not fit MOSS-Image.
     expect(isBaseCompatible(model('moss-image', 'main'), model('flux2', 'lora'))).toBe(false);
   });
 
   it('limits cross-base allowances to the helper type and cited pairs', () => {
-    // The allowance belongs to the VAE type, not to the base pair.
     expect(isBaseCompatible(model('z-image', 'main'), model('flux', 'lora'))).toBe(false);
     expect(isBaseCompatible(model('z-image', 'main'), model('flux', 'main'))).toBe(false);
-    // No loader feeds an SD-3 VAE to a Z-Image pipeline.
     expect(isBaseCompatible(model('z-image', 'main'), model('sd-3', 'vae'))).toBe(false);
-    // Only the FLUX decoder is shared; other PiD pairings must match exactly.
     expect(isBaseCompatible(model('qwen-image', 'main'), model('flux', 'pid_decoder'))).toBe(false);
     expect(isBaseCompatible(model('sdxl', 'main'), model('sdxl', 'pid_decoder'))).toBe(true);
   });
@@ -89,12 +85,9 @@ describe('isBaseCompatible', () => {
     expect(isBaseCompatible(model('any', 'siglip'), model('flux', 'main'))).toBe(true);
     expect(isBaseCompatible(model('any', 'clip_vision'), model('sdxl', 'main'))).toBe(true);
     expect(isBaseCompatible(model('any', 'mistral_encoder'), model('flux2', 'main'))).toBe(true);
-    // Z-Image PiD decode consumes a standalone Gemma2 encoder.
     expect(isBaseCompatible(model('any', 'gemma2_encoder'), model('z-image', 'main'))).toBe(true);
-    // moss_image_model_loader reads a standalone Qwen3.5 encoder, and its PiD decode a Gemma2 one.
     expect(isBaseCompatible(model('any', 'qwen3_5_encoder'), model('moss-image', 'main'))).toBe(true);
     expect(isBaseCompatible(model('any', 'gemma2_encoder'), model('moss-image', 'main'))).toBe(true);
-    // No pipeline feeds a CLIP Vision model to an SD2 main.
     expect(isBaseCompatible(model('any', 'clip_vision'), model('sd-2', 'main'))).toBe(false);
   });
 
@@ -122,7 +115,6 @@ describe('isBaseCompatible', () => {
 
 describe('isLinkablePair', () => {
   it('blocks same-type pairs of single-slot types', () => {
-    // A pipeline runs exactly one of each; two are never "used together".
     expect(isLinkablePair(model('sdxl', 'main'), model('sdxl', 'main'))).toBe(false);
     expect(isLinkablePair(model('sdxl', 'vae'), model('sdxl', 'vae'))).toBe(false);
     expect(isLinkablePair(model('any', 't5_encoder'), model('any', 't5_encoder'))).toBe(false);
@@ -153,6 +145,44 @@ describe('hasLinkableBase', () => {
   });
 });
 
+describe('models that serve as another type through a role', () => {
+  // A directly downloaded MOSS encoder: a Text LLM record whose files also serve as the Qwen3.5 encoder.
+  const roleEncoder: RelatableModel = {
+    base: 'any',
+    roles: [{ type: 'qwen3_5_encoder', variant: 'qwen3_5_9b' }],
+    type: 'text_llm',
+  };
+  const plainTextLlm: RelatableModel = { base: 'any', roles: [], type: 'text_llm' };
+
+  it('treats the model as linkable when any of its types is', () => {
+    expect(isLinkableModel(roleEncoder)).toBe(true);
+    expect(hasLinkableBase(roleEncoder)).toBe(true);
+    expect(isLinkableModel(plainTextLlm)).toBe(false);
+    expect(hasLinkableBase(plainTextLlm)).toBe(false);
+    expect(isLinkableModel({ type: 'text_llm' })).toBe(false);
+  });
+
+  it('links to the hosts its role type has an allowance for, and not to others', () => {
+    // The rule is by base like the native encoder's; the role variant (9B vs 4B) is not consulted.
+    expect(isLinkablePair(roleEncoder, model('moss-image', 'main'))).toBe(true);
+    expect(isLinkablePair(model('moss-image', 'main'), roleEncoder)).toBe(true);
+    expect(isLinkablePair(roleEncoder, model('sdxl', 'main'))).toBe(false);
+  });
+
+  it('never links a plain Text LLM', () => {
+    expect(isLinkablePair(plainTextLlm, model('moss-image', 'main'))).toBe(false);
+    expect(isLinkablePair(model('moss-image', 'main'), plainTextLlm)).toBe(false);
+  });
+
+  it('refuses a pair that shares a single-slot type through a role', () => {
+    const native: RelatableModel = { base: 'any', type: 'qwen3_5_encoder' };
+
+    expect(isLinkablePair(roleEncoder, native)).toBe(false);
+    expect(isLinkablePair(native, roleEncoder)).toBe(false);
+    expect(isLinkablePair(roleEncoder, { ...roleEncoder })).toBe(false);
+  });
+});
+
 describe('LINKABLE_TYPES', () => {
   it('includes every curated type', () => {
     for (const type of Object.keys(NULL_BASE_ALLOWANCES)) {
@@ -163,7 +193,6 @@ describe('LINKABLE_TYPES', () => {
   });
 
   it('includes the concrete-based helper types the backend loaders consume', () => {
-    // flux_control_lora_loader, flux_redux, and pid_decoder_loader.
     expect(isLinkableType('control_lora')).toBe(true);
     expect(isLinkableType('flux_redux')).toBe(true);
     expect(isLinkableType('pid_decoder')).toBe(true);

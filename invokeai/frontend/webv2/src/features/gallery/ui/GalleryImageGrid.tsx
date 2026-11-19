@@ -16,6 +16,8 @@ import {
   imageIndexAvailabilityOptions,
   type GalleryItemsFilter,
 } from '@features/gallery/data/queries';
+import { isEventFromOwnDom } from '@platform/react/isEventFromOwnDom';
+import { useMountEffect } from '@platform/react/useMountEffect';
 import { getApiErrorMessage } from '@platform/transport/http';
 import { Button, DropZone } from '@platform/ui';
 import { LoadError, RetryButton } from '@platform/ui/LoadError';
@@ -77,11 +79,7 @@ import { useGalleryUploadInput } from './useGalleryUploadInput';
 
 type VirtualRange = Parameters<typeof defaultRangeExtractor>[0];
 
-/**
- * Seeds the measured width per region so remounting the gallery in a placement
- * it has already been shown in does not paint one frame of fallback-sized
- * tiles before the ResizeObserver reports.
- */
+/** Seeded per region so a remount does not paint fallback-sized tiles before the ResizeObserver reports. */
 const viewportWidthCache = new Map<string, number>();
 const STARRED_TRIGGER_HOVER_STYLES = { color: 'fg' } as const;
 const EMPTY_GALLERY_ITEMS: GalleryItem[] = [];
@@ -89,7 +87,9 @@ const EMPTY_GALLERY_ITEMS: GalleryItem[] = [];
 // Module-scoped so a grid remount cannot replay an already-followed reveal.
 let lastPageFollowedRevealToken = 0;
 
-const dragEventContainsFiles = (event: DragEvent): boolean => Array.from(event.dataTransfer.types).includes('Files');
+// React bubbles drags over portalled content (a tile's context menu); those are not over the grid.
+const isFileDragOnGrid = (event: DragEvent): boolean =>
+  isEventFromOwnDom(event) && Array.from(event.dataTransfer.types).includes('Files');
 
 const GalleryPageError = ({
   onFocusLost,
@@ -205,7 +205,6 @@ const GallerySparseSlot = ({
   );
 };
 
-/** Show all appears only when starred items exceed the strip and activates the starred-only listing. */
 const GalleryStarredSectionHeader = ({
   isOpen,
   onFocusLost,
@@ -227,7 +226,7 @@ const GalleryStarredSectionHeader = ({
 
   return (
     <Flex align="center" gap="1" h={`${GALLERY_STARRED_HEADER_HEIGHT_PX}px`} px="1" w="full">
-      {/* A disclosure named by its visible heading and count; aria-expanded carries the open state. */}
+      {/* aria-expanded carries the open state. */}
       <chakra.button
         aria-expanded={isOpen}
         alignItems="center"
@@ -266,7 +265,6 @@ const GalleryStarredSectionHeader = ({
         </HStack>
       </chakra.button>
       {state.status === 'stale-error' ? (
-        // The strip keeps its earlier cells; the header carries the failed refresh and its recovery.
         <RetryButton
           aria-label={t('widgets.gallery.retryRefreshingStarredItems')}
           color="fg.error"
@@ -294,10 +292,7 @@ const GalleryStarredSectionHeader = ({
   );
 };
 
-/**
- * Render the bounded starred strip outside virtualization while preserving its place in cross-section keyboard
- * navigation.
- */
+/** Outside virtualization but in its place in cross-section keyboard navigation. */
 const GalleryStarredSection = ({
   cells,
   cellSizePx,
@@ -311,7 +306,6 @@ const GalleryStarredSection = ({
   onToggle,
 }: {
   cells: GalleryItem[];
-  /** Rows take the listing's pitch explicitly, so the pinned block measures what the layout computed. */
   cellSizePx: number;
   columnCount: number;
   isOpen: boolean;
@@ -359,22 +353,19 @@ const GalleryStarredSection = ({
   );
 };
 
-/** A tile's own select button, not the star toggle layered over it. */
 const TILE_BUTTON_SELECTOR = '[role="listitem"] button[aria-pressed]';
 
 const NO_ITEMS: GalleryItem[] = [];
 const GRID_OVERSCAN_ROWS = 4;
 
-/** Where keyboard focus last was among the thumbnails: the scope and position outlive the tile itself. */
 interface FocusedTile {
   filter: GalleryItemsFilter;
   index: number;
   key: GalleryItemKey;
-  /** The sparse slot it showed, whose next occupant inherits the Tab stop; positions elsewhere shift with eviction. */
+  /** The sparse slot whose next occupant inherits the Tab stop. */
   slot?: number;
 }
 
-/** The rows in view plus the one keyboard focus needs wherever the grid scrolls; -1 keeps nothing. */
 const extractRangeKeeping = (range: VirtualRange, keptRow: number): number[] => {
   const indexes = defaultRangeExtractor(range);
 
@@ -383,14 +374,12 @@ const extractRangeKeeping = (range: VirtualRange, keptRow: number): number[] => 
     : [...indexes, keptRow].sort((a, b) => a - b);
 };
 
-/** The item of the thumbnail tile holding `element`, whether its select button or the star toggle over it. */
 const getTileItemKey = (element: Element | null): GalleryItemKey | null =>
   (element
     ?.closest('[role="listitem"]')
     ?.querySelector('[data-gallery-item-key]')
     ?.getAttribute('data-gallery-item-key') ?? null) as GalleryItemKey | null;
 
-/** The tile that shows a navigation entry: a thumbnail, or an in-progress session. */
 const findEntryTile = (viewport: HTMLElement, entry: GalleryNavigationEntry): HTMLElement | null =>
   entry.kind === 'session'
     ? viewport.querySelector<HTMLElement>(`[data-gallery-session-id="${CSS.escape(entry.id)}"]`)
@@ -398,21 +387,44 @@ const findEntryTile = (viewport: HTMLElement, entry: GalleryNavigationEntry): HT
       ? viewport.querySelector<HTMLElement>(`[data-gallery-item-key="${CSS.escape(toGalleryItemKey(entry.item))}"]`)
       : null;
 
-/** Prefers a visible tile; an empty grid offers whatever else it shows (its upload target, the strip header). */
 const focusVisibleGridContent = (viewport: HTMLElement | null, edge: 'first' | 'last') => {
   if (!focusVisibleOperable(viewport, { edge, selector: TILE_BUTTON_SELECTOR })) {
     focusVisibleOperable(viewport, { edge });
   }
 };
 
-/** Measure viewport width for columns so both layouts share the same grid. */
+const GALLERY_EXIT_COMPARE_COMMAND = 'gallery.exitCompare';
+
+/** Mounted only while comparing, so Esc keeps its other meanings the rest of the time. */
+const GalleryExitCompareHotkey = () => {
+  const { t } = useTranslation();
+  const { actions, runtime } = useGalleryWidget();
+
+  useMountEffect(() => {
+    const exitCompare = () => actions.setCompareItem(null);
+    const title = t('widgets.preview.commands.exitCompare');
+    const disposers = [
+      runtime.commands.register({ handler: exitCompare, id: GALLERY_EXIT_COMPARE_COMMAND, title }),
+      runtime.hotkeys.register({
+        commandId: GALLERY_EXIT_COMPARE_COMMAND,
+        defaultKeys: ['esc'],
+        id: GALLERY_EXIT_COMPARE_COMMAND,
+        title,
+      }),
+    ];
+
+    return () => disposers.forEach((dispose) => dispose());
+  });
+
+  return null;
+};
+
 export const GalleryImageGrid = ({
   mediaFilterTriggerRef,
 }: {
-  /** The layout's media filter trigger, which takes focus when "Show all media" removes itself. */
   mediaFilterTriggerRef?: RefObject<HTMLButtonElement | null>;
 } = {}) => {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const {
     actions,
     filter,
@@ -420,6 +432,7 @@ export const GalleryImageGrid = ({
     itemActions,
     listing,
     pinRevealIndex,
+    projectId,
     region,
     setVisibleRange,
     sparseListing,
@@ -467,7 +480,6 @@ export const GalleryImageGrid = ({
     (item: GalleryItem) => sparseSelectionPages.get(toGalleryItemKey(item)),
     [sparseSelectionPages]
   );
-  // The right-clicked thumbnail, or, once a deletion removed it, the grid's tab stop.
   const getItemReturnFocus = useCallback(
     (item: GalleryItem) => () => {
       const viewport = viewportRef.current;
@@ -511,21 +523,20 @@ export const GalleryImageGrid = ({
     : 0;
   const isFollowingLive = followedProgressSessionId !== null;
   const isComparisonActive = gallery.isComparisonActive && !isFollowingLive;
+  // Not hidden while live frames show: the waiting image stays marked.
+  const isCompareArmed = gallery.isCompareArmed;
   const selectedBoard = gallery.boards.find((board) => board.id === gallery.selectedBoardId);
   const selectedBoardName = selectedBoard
     ? getGalleryBoardLabel(selectedBoard, t)
     : t('widgets.gallery.selectedBoardFallback');
-  // The listing is unstarred-only, so a board whose items are all starred
-  // still has the strip to show.
+  // The listing is unstarred-only, so an all-starred board still has the strip to show.
   const isEmpty =
     (usesSparseListing ? sparseBackendItemCount === 0 && sparseRecentItems.length === 0 : gallery.items.length === 0) &&
     starredStrip.items.length === 0;
-  // A failed strip with no cells to show (none loaded, or an empty earlier result) reports in the header's place.
   const isStarredFailedEmpty =
     (starredStrip.state.status === 'error' || starredStrip.state.status === 'stale-error') &&
     starredStrip.items.length === 0;
-  // A ranking that matched nothing is still a search result, never an empty
-  // board inviting an upload.
+  // A ranking that matched nothing is still a search result, never an empty board inviting an upload.
   const hasActiveSearch = gallery.searchTerm.trim() !== '' || gallery.semanticImageQuery !== null;
   const isVirtualBoard = isDateBoardId(gallery.selectedBoardId);
 
@@ -534,16 +545,10 @@ export const GalleryImageGrid = ({
     () => getGalleryStarredStripItems(starredStrip.items, columnCount),
     [columnCount, starredStrip.items]
   );
-  // Exclude collapsed tiles from navigation, but retain hidden starred selections' section identity so arrows can
-  // step out.
   const isProgressOpen = showPendingItems && !progressSectionCollapsed;
   const shownStripItems = isStarredOpen ? starredCells : NO_ITEMS;
-  // A starred selection no tile shows still belongs to the strip: one under the collapsed disclosure or past the
-  // shown rows, which the strip holds, or — as in Preview — one beyond the strip's bound, which the view names no
-  // visible key for and only the persisted selection holds (the listing is unstarred). Either way the arrows step
-  // from it rather than from the first tile. The persisted selection counts only when made in this listing: one
-  // left over from another board, search or filter would put a phantom entry at the end of this strip. Where the
-  // strip does not apply (the starred-only listing, a ranking, an anchored window) there is no strip to hold it.
+  // A starred selection no tile shows still belongs to the strip, so arrows step from it, but only when made in this
+  // listing: a leftover would add a phantom entry. A starred-only listing, ranking or anchored window has none.
   const isStripApplicable =
     !gallery.starredOnly && gallery.semanticImageQuery === null && gallery.anchoredWindowPage === 0;
   const hiddenStripSelection = useMemo((): GalleryItem | null => {
@@ -579,7 +584,6 @@ export const GalleryImageGrid = ({
     const loadingPageOffsets = [...(sparseListing?.pageStates ?? [])]
       .filter(([, pageState]) => pageState.isLoading)
       .map(([offset]) => offset);
-    // Paginated slots are page-local and that mode subscribes one page, which is offset 0 here.
     const pendingPageOffsets = new Set(
       isSparsePaginated ? (loadingPageOffsets.length > 0 ? [0] : []) : loadingPageOffsets
     );
@@ -622,14 +626,12 @@ export const GalleryImageGrid = ({
     shownStripItems,
     usesSparseListing,
   ]);
-  // What a step into an unloaded page started from. The persisted primary, unlike the visible key, survives its page
-  // leaving the subscribed range while the target page loads.
+  // The persisted primary, unlike the visible key, survives its page leaving the subscribed range.
   const navigationOriginKey =
     followedProgressSessionId !== null
       ? getGallerySessionNavigationKey(followedProgressSessionId)
       : gallery.primarySelectedItemKey;
-  // Thumbnails in visual order share one Tab stop. Sparse slots must retain their real row positions even when pages
-  // are unloaded, and recent results sit at the order-dependent end of that listing.
+  // Sparse slots keep their real row positions even when pages are unloaded.
   const sparseSlotEntries = useMemo(
     () => [...(sparseListing?.itemSlots.entries() ?? [])].sort(([left], [right]) => left - right),
     [sparseListing?.itemSlots]
@@ -684,8 +686,7 @@ export const GalleryImageGrid = ({
     : tabStopIndex < shownStripItems.length
       ? -1
       : Math.floor((tabStopIndex - shownStripItems.length) / columnCount);
-  // Scrolling never unmounts the Tab stop, which is also the focused tile while the grid holds focus: focus would
-  // fall to the document body, and Tab would skip the grid.
+  // Never unmount the Tab stop: focus would fall to the body and Tab would skip the grid.
   const rangeExtractor = useCallback((range: VirtualRange) => extractRangeKeeping(range, tabStopRow), [tabStopRow]);
 
   const backendRowCount = usesSparseListing ? Math.ceil(sparseBackendItemCount / columnCount) : rows.length;
@@ -765,8 +766,7 @@ export const GalleryImageGrid = ({
         return;
       }
 
-      // The range extractor also retains the roving Tab stop, which may be far outside the viewport. Do not let that
-      // accessibility row expand the sparse Query subscription or become the scroll anchor.
+      // The kept Tab stop row must not widen the sparse Query subscription or become the scroll anchor.
       const visibleItems = instance
         .getVirtualItems()
         .filter(
@@ -839,8 +839,7 @@ export const GalleryImageGrid = ({
       const afterLastBackendRow = Math.min(backendRowCount, Math.max(0, lastRow - leadingRecentRows + 1));
 
       if (afterLastBackendRow <= firstBackendRow) {
-        // Descending recents precede backend slot zero. Before count discovery, ascending recents keep page zero
-        // active; afterward the backend tail page reconciles ascending recent overlays with the authoritative list.
+        // Descending recents precede slot zero; before count discovery ascending recents keep page zero active.
         if (sparseRecentAtTop || sparseListing.total === null) {
           setVisibleRange({ endIndexExclusive: GALLERY_PAGE_SIZE, startIndex: 0 });
         } else {
@@ -904,9 +903,8 @@ export const GalleryImageGrid = ({
     pendingSparseFocusRef.current = null;
   }, []);
   /**
-   * A `verified` index comes from a reveal's locator and may exceed a total counted before another client added
-   * items; its page is pinned so its fresher total reconciles the listing. `keepIndex` names a slot whose page stays
-   * subscribed alongside when it neighbors the target page, as an arrow step's origin must until the step lands.
+   * A `verified` index from a reveal may exceed a stale total, so its page is pinned. `keepIndex` keeps a neighboring
+   * origin page subscribed until an arrow step lands.
    */
   const requestSparseAbsoluteIndex = useCallback(
     (absoluteIndex: number, { keepIndex, verified = false }: { keepIndex?: number; verified?: boolean } = {}) => {
@@ -925,11 +923,10 @@ export const GalleryImageGrid = ({
       const pageOffset = Math.floor(absoluteIndex / GALLERY_PAGE_SIZE) * GALLERY_PAGE_SIZE;
       const keepPageOffset =
         keepIndex === undefined ? pageOffset : Math.floor(keepIndex / GALLERY_PAGE_SIZE) * GALLERY_PAGE_SIZE;
-      // Only a neighboring origin stays: an origin far off, such as a strip item also loaded deep in the listing,
-      // would subscribe every page between the two.
+      // Only a neighboring origin stays: a far one would subscribe every page between the two.
       const keptPageOffset = Math.abs(keepPageOffset - pageOffset) <= GALLERY_PAGE_SIZE ? keepPageOffset : pageOffset;
 
-      // A page already subscribed keeps the range around it; narrowing to it would drop the cursor's page.
+      // Narrowing to an already subscribed page would drop the cursor's page.
       if (!sparseListing.pageStates.has(pageOffset)) {
         setVisibleRange({
           endIndexExclusive: Math.min(
@@ -958,7 +955,6 @@ export const GalleryImageGrid = ({
           ? getGallerySessionNavigationKey(activeSessionId)
           : getTileItemKey(active)
         : null;
-      // The step starts from the focused tile, else the selection; a listing slot's page stays loaded under it.
       const stepOriginKey = originFocusKey ?? navigationOriginKey;
       const originSlot = sparseSlotEntries.find(([, item]) => toGalleryItemKey(item) === stepOriginKey)?.[0];
 
@@ -983,9 +979,7 @@ export const GalleryImageGrid = ({
     virtualizer.measure();
   });
 
-  // The hotkey callback reads current state when invoked; stabilizing its identity adds no value and interferes
-  // with compiler memoization.
-  /** Returns whether the item had somewhere to scroll to — a collapsed strip has none. */
+  // A stable identity adds nothing and hinders compiler memoization.
   const scrollToItemKey = (itemKey: GalleryItemKey): boolean => {
     if (usesSparseListing && sparseListing) {
       const recentIndex = sparseRecentItems.findIndex((item) => toGalleryItemKey(item) === itemKey);
@@ -1019,7 +1013,6 @@ export const GalleryImageGrid = ({
       }
     }
 
-    // Strip cells sit in the pinned block at the top of the scroll content.
     if (isStarredOpen && starredCells.some((item) => toGalleryItemKey(item) === itemKey)) {
       viewportRef.current?.scrollTo({ top: 0 });
       return true;
@@ -1029,7 +1022,6 @@ export const GalleryImageGrid = ({
   };
   const scrollToEntry = (entry: GalleryNavigationEntry) => {
     if (entry.kind === 'session') {
-      // In-progress tiles sit below the starred strip; scroll only when the target tile's row is out of view.
       const viewport = viewportRef.current;
       const sessionIndex = progressSessions.findIndex((session) => session.id === entry.id);
 
@@ -1069,11 +1061,8 @@ export const GalleryImageGrid = ({
     [filter, sparseSlotEntries, tileKeys]
   );
 
-  // A tile that leaves the document holding focus (deleted, moved between the strip and the listing, replaced by
-  // another board's, its page evicted by scrolling away) takes focus with it. The same item takes it back where it
-  // now shows, else the Tab stop while in view, else the first tile in view, else the grid itself, so the keys stay
-  // with the gallery without pulling the next arrow back to a far-off tile; a user who already went elsewhere keeps
-  // their focus.
+  // A tile that leaves the document holding focus takes it along: the same item takes it back where it now shows,
+  // else the Tab stop, first tile in view or the grid. A user who already went elsewhere keeps their focus.
   const restoreTileFocus = useCallback((itemKey: GalleryItemKey) => {
     const viewport = viewportRef.current;
     const active = document.activeElement;
@@ -1094,7 +1083,6 @@ export const GalleryImageGrid = ({
     }
   }, []);
 
-  /** The tile holding keyboard focus inside the grid: a thumbnail's item key, or a session's navigation key. */
   const getFocusedTileKey = (): string | null => {
     const viewport = viewportRef.current;
     const active = document.activeElement;
@@ -1107,14 +1095,12 @@ export const GalleryImageGrid = ({
 
     return sessionId ? getGallerySessionNavigationKey(sessionId) : getTileItemKey(active);
   };
-  // A followed session the grid does not show (its section collapsed) gives way to the selection, which a starred
-  // item beyond the strip's bound is too, though the view names no visible key for it.
+  // A followed session the grid does not show gives way to the selection.
   const getCursorCandidates = () => [
     getFocusedTileKey(),
     followedProgressSessionId === null ? null : getGallerySessionNavigationKey(followedProgressSessionId),
     hiddenStripSelection ? toGalleryItemKey(hiddenStripSelection) : gallery.selectedItemKey,
   ];
-  /** The first thumbnail in view, where the arrows start when no cursor is on screen. */
   const getFirstVisibleTileKey = (): string | null => {
     const viewport = viewportRef.current;
 
@@ -1124,7 +1110,7 @@ export const GalleryImageGrid = ({
 
     const bounds = viewport.getBoundingClientRect();
 
-    // Document order is visual order: the pinned strip, then the rendered listing rows by index.
+    // Document order is visual order.
     for (const tile of viewport.querySelectorAll<HTMLElement>('button[data-gallery-item-key]')) {
       const rect = tile.getBoundingClientRect();
 
@@ -1143,10 +1129,7 @@ export const GalleryImageGrid = ({
       : null;
   };
 
-  /**
-   * Arrow keys move keyboard focus to the entry while focus is in the grid; a command run elsewhere leaves focus be,
-   * and a focus-only move (no `select`) needs focus in the grid to mean anything.
-   */
+  /** Moves focus only while it is in the grid; a command run elsewhere leaves focus be. */
   const moveToEntry = (entry: GalleryNavigationEntry, select: (() => void) | null) => {
     const viewport = viewportRef.current;
 
@@ -1158,7 +1141,7 @@ export const GalleryImageGrid = ({
       return;
     }
 
-    // Committed before focus moves: the target becomes the Tab stop, which keeps it mounted however far it is.
+    // Committed before focus moves: the Tab stop stays mounted however far it is.
     flushSync(() => {
       select?.();
 
@@ -1172,8 +1155,6 @@ export const GalleryImageGrid = ({
     findEntryTile(viewport, entry)?.focus({ preventScroll: true });
   };
 
-  // A confirmation the grid's keys opened returns focus to the tile that held it, or to the Tab stop once a
-  // deletion has taken that tile away.
   const getDialogReturnFocus = () => {
     const viewport = viewportRef.current;
     const opener = document.activeElement;
@@ -1225,7 +1206,7 @@ export const GalleryImageGrid = ({
       ? sparseListing?.pageStates.get(sparsePageOffset)
       : sparseListing?.pageStates.get(Math.floor(pending.index / GALLERY_PAGE_SIZE) * GALLERY_PAGE_SIZE);
 
-    // A target page that settled or failed without the item leaves a gap; a later refresh must not land the step.
+    // A settled page without the item leaves a gap; a later refresh must not land the step.
     if (!item && targetPageState && !targetPageState.isLoading) {
       pendingSparseNavigationRef.current = null;
       return;
@@ -1298,17 +1279,13 @@ export const GalleryImageGrid = ({
     }
   }, [focusedTile, sparseFilterIdentity, sparseListing?.itemSlots]);
 
-  // Only explicit reveals scroll. Retry while the item loads; retire the request when another selection supersedes
-  // it.
   const revealRequest = useSyncExternalStore(subscribeGalleryRevealRequests, getGalleryRevealRequest);
-  // A reveal's index locates the item in the listing the selection navigates (Preview's), which keeps its own query
-  // after this grid's board, order, search, filter or ranking changes. Only that same listing's index means a slot here.
+  // The index is a slot only in the listing the selection navigates, which may have its own query.
   const selectedImageQuery = getGallerySelectedImageQuery(galleryValues);
   const isRevealIndexInScope =
     isGallerySelectionInScope(selectedImageQuery, gallery) &&
     (selectedImageQuery.semanticKey ?? '') === gallerySemanticReferenceKey(gallery.semanticImageQuery);
   const pendingRevealRef = useRef<GalleryRevealRequest | null>(null);
-  // Honor requests preceding mount; selection mismatch, rather than request age, determines staleness.
   const consumedRevealTokenRef = useRef(0);
   const settlePendingReveal = useEffectEvent(() => {
     const pending = pendingRevealRef.current;
@@ -1323,8 +1300,7 @@ export const GalleryImageGrid = ({
       return;
     }
 
-    // Another selection retires the reveal; the persisted set catches
-    // off-page selections whose visible key is null.
+    // The persisted set catches off-page selections whose visible key is null.
     if (
       (gallery.selectedItemKey !== null && gallery.selectedItemKey !== pending.itemKey) ||
       (gallery.selectedItemKeys.length > 0 && !gallery.selectedItemKeys.includes(pending.itemKey))
@@ -1334,17 +1310,14 @@ export const GalleryImageGrid = ({
       return;
     }
 
-    // Consumed only once it actually scrolled, so a reveal whose row has not
-    // been built yet (a strip under a collapsed disclosure, a page still
-    // loading) is honored on the next row-model change.
+    // Consumed only once it scrolled, so a row not built yet is honored on the next row-model change.
     if (scrollToItemKey(pending.itemKey)) {
       pendingRevealRef.current = null;
 
       return;
     }
 
-    // The item may live on another paginated page: follow once per reveal, so
-    // a reveal whose item never materializes cannot keep pulling the user back.
+    // Follow once per reveal so a missing item cannot keep pulling the user back.
     if (
       !loadedItems.some((item) => toGalleryItemKey(item) === pending.itemKey) &&
       gallery.revealTargetPage !== null &&
@@ -1414,8 +1387,7 @@ export const GalleryImageGrid = ({
     return () => observer.disconnect();
   }, [isEmpty, region]);
 
-  // Measure before paint after row-model changes: unchanged visible indices otherwise leave stale offsets despite
-  // new row estimates.
+  // Measure before paint, or unchanged visible indices keep stale offsets despite new estimates.
   const restoreSparseScrollAnchor = useEffectEvent(() => {
     const viewport = viewportRef.current;
     const previousGeometry = lastMeasuredSparseGeometryRef.current;
@@ -1450,7 +1422,6 @@ export const GalleryImageGrid = ({
           [...previousSnapshot.itemKeys].some(([index, itemKey]) => itemKeys.get(index) !== itemKey));
 
       if (listingIdentityChanged) {
-        // Search and page navigation deliberately choose a new viewport. Do not carry an anchor across them.
         sparseScrollAnchorRef.current = null;
       } else if ((geometryChanged || positionsChanged) && viewport) {
         const anchor = sparseScrollAnchorRef.current;
@@ -1485,8 +1456,7 @@ export const GalleryImageGrid = ({
               }
             : nearbyMatch;
 
-          // A missing anchor is meaningful only after its own page has settled successfully. A page that left the
-          // active sparse range, is still loading, or failed a refetch may simply have been temporarily evicted.
+          // A missing anchor counts only once its page settled successfully; otherwise it may just be evicted.
           if (target) {
             const rowIndex = leadingRecentRows + Math.floor(target.localIndex / columnCount);
             const rowTop = pinnedHeight + rowIndex * rowHeightPx;
@@ -1599,7 +1569,7 @@ export const GalleryImageGrid = ({
       ),
     [listing.status, sparseListing?.pageStates, sparsePageStatusOffsets]
   );
-  // From the rows in view and their overscan, never the Tab stop kept mounted far below them.
+  // Never the Tab stop kept mounted far below.
   const lastVisibleRowIndex = Math.min((virtualizer.range?.endIndex ?? 0) + GRID_OVERSCAN_ROWS, rowCount - 1);
 
   useEffect(() => {
@@ -1609,7 +1579,7 @@ export const GalleryImageGrid = ({
   }, [actions, lastVisibleRowIndex, paginationMode, rowCount, usesSparseListing]);
 
   const handleDragEnter = useCallback((event: DragEvent) => {
-    if (!dragEventContainsFiles(event)) {
+    if (!isFileDragOnGrid(event)) {
       return;
     }
 
@@ -1619,7 +1589,7 @@ export const GalleryImageGrid = ({
   }, []);
 
   const handleDragLeave = useCallback((event: DragEvent) => {
-    if (!dragEventContainsFiles(event)) {
+    if (!isFileDragOnGrid(event)) {
       return;
     }
 
@@ -1631,13 +1601,16 @@ export const GalleryImageGrid = ({
   }, []);
 
   const handleDragOver = useCallback((event: DragEvent) => {
-    if (dragEventContainsFiles(event)) {
+    if (isFileDragOnGrid(event)) {
       event.preventDefault();
     }
   }, []);
 
   const handleDrop = useCallback(
     (event: DragEvent) => {
+      if (!isEventFromOwnDom(event)) {
+        return;
+      }
       event.preventDefault();
       dragDepthRef.current = 0;
       setIsDropActive(false);
@@ -1668,9 +1641,7 @@ export const GalleryImageGrid = ({
     [actions, isStarredOpen]
   );
 
-  // Show all removes the header it lives in; focus moves first, to the
-  // toolbar control that reports (and undoes) the filter, so keyboard users
-  // are not dropped on the document body.
+  // Show all removes its own header, so focus moves first to the toolbar filter control.
   const handleShowAllStarred = useCallback(() => {
     viewportRef.current
       ?.closest('[role="tabpanel"]')
@@ -1679,7 +1650,6 @@ export const GalleryImageGrid = ({
     actions.setStarredOnly(true);
   }, [actions]);
 
-  // The button leaves with the empty state; focus lands on the control that owns the filter.
   const handleShowAllMedia = useCallback(() => {
     mediaFilterTriggerRef?.current?.focus();
     actions.updateSettings({ mediaFilter: 'all' });
@@ -1692,11 +1662,9 @@ export const GalleryImageGrid = ({
   const handleOpenItem = useCallback((item: GalleryItem) => itemActions.openItemInPreview(item), [itemActions]);
   const handleOpenItemInNewTab = useCallback((item: GalleryItem) => itemActions.openItemInNewTab(item), [itemActions]);
 
-  // Releasing the anchor puts the window back over the top of the listing.
   const handleReturnToBoardTop = useCallback(() => galleryCommands.setPage(0), [galleryCommands]);
 
-  // A successful retry unmounts the Retry that held focus; content the user can already see takes it instead,
-  // without scrolling. After more items load at the end, that is the bottom of the visible grid, beside the new items.
+  // A successful retry unmounts the focused Retry; visible content takes focus without scrolling.
   const focusGridContent = useCallback(() => focusVisibleGridContent(viewportRef.current, 'first'), []);
   const focusGridEnd = useCallback(() => focusVisibleGridContent(viewportRef.current, 'last'), []);
 
@@ -1712,7 +1680,8 @@ export const GalleryImageGrid = ({
           compareRole={
             isComparisonActive && itemKey === gallery.selectedItemKey
               ? t('widgets.preview.viewing')
-              : isComparisonActive && itemKey === gallery.compareImageKey
+              : // While waiting for the second image, the base already carries its side.
+                (isComparisonActive || isCompareArmed) && itemKey === gallery.compareImageKey
                 ? t('widgets.preview.compare')
                 : null
           }
@@ -1743,6 +1712,7 @@ export const GalleryImageGrid = ({
       handleThumbnailClick,
       handleThumbnailContextMenu,
       handleToggleStarred,
+      isCompareArmed,
       isComparisonActive,
       isFollowingLive,
       middleClickOpensInNewTab,
@@ -1760,6 +1730,7 @@ export const GalleryImageGrid = ({
   const sparseErrorPageOffset = [...(sparseListing?.pageStates ?? [])].find(([, pageState]) => pageState.error)?.[0];
   return (
     <Stack flex="1" gap="0" h="full" minH="0" minW="0" w="full">
+      {isComparisonActive || isCompareArmed ? <GalleryExitCompareHotkey key={`${projectId}:${i18n.language}`} /> : null}
       {listing.status === 'stale-error' &&
       (!usesSparseListing || (Boolean(sparseListing?.pageStates.get(0)?.error) && !sparsePageStatusOffsets.has(0))) ? (
         <GalleryLoadNotice
@@ -1812,7 +1783,7 @@ export const GalleryImageGrid = ({
           </Flex>
         ) : null}
         <ScrollArea.Root h="full" minH="0" variant="hover" w="full">
-          {/* Focusable from script only: it holds keyboard focus while the grid has no tiles to give it. */}
+          {/* Focusable from script only, for when the grid has no tiles. */}
           <ScrollArea.Viewport
             ref={viewportRef}
             aria-label={t('widgets.gallery.contentAriaLabel')}
@@ -1825,9 +1796,7 @@ export const GalleryImageGrid = ({
             w="full"
             onFocus={handleGridFocus}
           >
-            {/* The viewport is a flex column, and `minH` replaces the content's automatic minimum: without
-                `flexShrink={0}` the content would be squeezed to the viewport's height, shrinking the virtual rows'
-                sizer (it holds nothing in flow) so the rows overflow it and whatever follows sits mid-list. */}
+            {/* Without `flexShrink={0}` the flex viewport squeezes the content and rows overflow their sizer. */}
             <ScrollArea.Content display="flex" flexDirection="column" flexShrink={0} minH="full">
               {pinnedHeight > 0 ? (
                 <Box
@@ -1852,7 +1821,6 @@ export const GalleryImageGrid = ({
                       onToggle={handleToggleStarredSection}
                     />
                   ) : isStarredFailedEmpty ? (
-                    // Never an absent strip: a failed one says so where it would sit, without holding up the grid.
                     <GalleryLoadNotice
                       h={`${GALLERY_STARRED_HEADER_HEIGHT_PX}px`}
                       message={t(
@@ -1898,7 +1866,6 @@ export const GalleryImageGrid = ({
               ) : isEmpty && isStarredFailedEmpty && listing.status !== 'loading' ? (
                 <Box flex="1" minH="8rem" />
               ) : isEmpty && mediaFilter !== 'all' && listing.status !== 'loading' ? (
-                // The media filter can hide everything on a board that has items; say so instead of inviting an upload.
                 <Stack
                   align="center"
                   color="fg.muted"
@@ -1929,7 +1896,6 @@ export const GalleryImageGrid = ({
                     </Text>
                   </Flex>
                 ) : (
-                  // No inset: the zone shares the thumbnails' outer edges.
                   <Flex align="stretch" flex="1" minH="8rem">
                     <input {...uploadInputProps} />
                     <DropZone
@@ -1952,9 +1918,7 @@ export const GalleryImageGrid = ({
                 )
               ) : (
                 <>
-                  {/* Rows have a fixed pitch, so the row model sizes the grid in the same render. The virtualizer's
-                      total trails a row-count change by a commit, long enough for the notice after the rows to
-                      leave first and the browser to clamp a scroll position resting at the bottom. */}
+                  {/* Fixed pitch: the virtualizer's total trails a row-count change by a commit. */}
                   <Box h={`${rowCount * rowHeightPx}px`} position="relative" w="full">
                     <Box
                       aria-label={t('widgets.gallery.itemsAriaLabel')}
@@ -2077,7 +2041,6 @@ export const GalleryImageGrid = ({
                     </Box>
                   </Box>
                   {!usesSparseListing && listing.status === 'more-error' ? (
-                    // Loaded pages stay; only the page that failed waits on Retry.
                     <GalleryLoadNotice
                       justify="center"
                       message={t('widgets.gallery.listingLoadMoreFailed')}

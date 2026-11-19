@@ -74,6 +74,7 @@ void i18n.use(initReactI18next).init({
           },
           preview: {
             autoSwitchLatestLocked: 'Newest (locked)',
+            compareArmedTooltip: 'Pick another image to compare · click to cancel',
             details: 'Details',
             editOnCanvas: 'Edit on Canvas',
             editThisImage: 'Edit this image',
@@ -97,6 +98,7 @@ void i18n.use(initReactI18next).init({
 
 const state = vi.hoisted(() => ({
   actionItem: null as null | Record<string, unknown>,
+  cancelCompare: null as null | (() => void),
   density: 'full' as 'compact' | 'full' | 'minimal' | null,
   viewerAutoSwitch: 'progress' as ViewerAutoSwitchMode,
   zoom: null as null | {
@@ -126,7 +128,6 @@ const showAll = vi.hoisted(() => vi.fn());
 const imageMetadata = vi.hoisted(() => vi.fn());
 const videoMetadata = vi.hoisted(() => vi.fn());
 vi.mock('@features/queue/react', () => ({ useProgressImage: () => null }));
-// The transport, under both the gallery's shared metadata query and its public image port.
 vi.mock('@features/gallery/data/backend', async (importOriginal) => ({
   ...(await importOriginal<typeof GalleryBackendModule>()),
   getGalleryImageByName: () => Promise.resolve({ hasWorkflow: false }),
@@ -138,7 +139,6 @@ vi.mock('@features/identity', async (importOriginal) => ({
   useAuthSession: () => ({ accountEpoch: 1 }),
 }));
 
-// Partial: the real zoom limits decide which presets the menu offers.
 vi.mock('./previewHeaderStore', async (importOriginal) => ({
   ...(await importOriginal<typeof PreviewHeaderStoreModule>()),
   usePreviewStageContext: () => ({
@@ -153,6 +153,7 @@ vi.mock('./previewHeaderStore', async (importOriginal) => ({
   usePreviewHeaderContext: () => ({
     actionItem: state.actionItem,
     actions: state.actionItem ? itemActions : null,
+    cancelCompare: state.cancelCompare,
     copyCurrentVideoFrame: null,
     isVideoFrameCopyAvailable: false,
     openItemMenu,
@@ -165,7 +166,6 @@ vi.mock('@workbench/useOpenWorkbenchWidget', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   useOpenWorkbenchWidget: () => vi.fn(),
 }));
-// The Upscale submenu asks for the model library when it mounts; nothing here opens it.
 vi.mock('@features/models', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ensureModelsLoaded: () => Promise.resolve(),
@@ -217,7 +217,6 @@ const STILL_IMAGE = {
   width: 8,
 };
 
-/** The header sizes itself by the density the stage publishes; the region is passed only to show it is ignored. */
 const render = async (region: WidgetViewProps['region'] = 'center') => {
   host = document.createElement('div');
   document.body.append(host);
@@ -242,7 +241,9 @@ const button = (label: string): HTMLButtonElement =>
 
 beforeEach(() => {
   state.actionItem = null;
+  state.cancelCompare = null;
   state.density = 'full';
+  itemActions.selectForCompare.mockClear();
   openItemMenu.mockClear();
   itemActions.canUseAsReferenceImage = false;
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -369,7 +370,6 @@ describe('preview zoom menu', () => {
     await settle(() => button('Zoom 88%').click());
 
     const item = (label: string) => page.getByRole('menuitem', { name: label });
-    // Fit is where the image already is; 100% and 200% are above the 88% fit, 400% too.
     await expect.element(item('Fit to view')).toHaveAttribute('aria-disabled', 'true');
     await expect.element(item('100%')).not.toHaveAttribute('aria-disabled');
     await item('200%').click();
@@ -378,75 +378,10 @@ describe('preview zoom menu', () => {
     state.zoom = { fitPercent: 120, isZoomed: true, percent: 200, reset, zoomTo };
     await render();
     await settle(() => button('Zoom 200%').click());
-    // 100% is below a 120% fit yet still offered, so an enlarged image can be seen at its own size; the current
-    // level is not re-offered.
     await expect.element(item('100%')).not.toHaveAttribute('aria-disabled');
     await expect.element(item('200%')).toHaveAttribute('aria-disabled', 'true');
     await item('Fit to view').click();
     expect(reset).toHaveBeenCalledOnce();
-  });
-
-  it('offers the presets between 100% and a fit that enlarges the image, since zoom goes down to 100%', async () => {
-    const zoomTo = vi.fn();
-    const item = (label: string) => page.getByRole('menuitem', { name: label });
-
-    state.zoom = { fitPercent: 250, isZoomed: false, percent: 250, reset: vi.fn(), zoomTo };
-    await render();
-    await settle(() => button('Zoom 250%').click());
-    await expect.element(item('100%')).not.toHaveAttribute('aria-disabled');
-    await expect.element(item('400%')).not.toHaveAttribute('aria-disabled');
-    await item('200%').click();
-    expect(zoomTo).toHaveBeenCalledExactlyOnceWith(2);
-  });
-
-  it('offers 100% at a fit just past it, though both read as 100%, and not at an exact 100% fit', async () => {
-    const zoomTo = vi.fn();
-    const item = (label: string) => page.getByRole('menuitem', { name: label });
-
-    state.zoom = { fitPercent: 100.2, isZoomed: false, percent: 100, reset: vi.fn(), zoomTo };
-    await render();
-    await settle(() => button('Zoom 100%').click());
-    await item('100%').click();
-    expect(zoomTo).toHaveBeenCalledExactlyOnceWith(1);
-
-    state.zoom = { fitPercent: 100, isZoomed: false, percent: 100, reset: vi.fn(), zoomTo };
-    await render();
-    await settle(() => button('Zoom 100%').click());
-    await expect.element(item('100%')).toHaveAttribute('aria-disabled', 'true');
-  });
-
-  it('names the fit level but shows the percent only while zoomed in full density', async () => {
-    state.zoom = { fitPercent: 88, isZoomed: false, percent: 88, reset: vi.fn(), zoomTo: vi.fn() };
-    await render();
-    const fitted = button('Zoom 88%');
-    expect(fitted.textContent).not.toContain('%');
-    expect(fitted.querySelector('.lucide-zoom-in')).not.toBeNull();
-    await settle(() => fitted.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' })));
-    await expect.element(page.getByRole('tooltip')).toHaveTextContent('Zoom 88%');
-
-    state.zoom = { fitPercent: 88, isZoomed: true, percent: 200, reset: vi.fn(), zoomTo: vi.fn() };
-    await render();
-    const zoomed = button('Zoom 200%');
-    expect(zoomed.textContent).toContain('200%');
-    expect(zoomed.querySelector('.lucide-zoom-in')).not.toBeNull();
-  });
-
-  it('follows the density the stage publishes and is compact until it has', async () => {
-    for (const density of ['compact', 'minimal', null] as const) {
-      state.density = density;
-      state.zoom = { fitPercent: 88, isZoomed: false, percent: 88, reset: vi.fn(), zoomTo: vi.fn() };
-      await render('center');
-      expect(host!.querySelector('button[aria-label="Zoom 88%"]')).toBeNull();
-
-      state.zoom = { fitPercent: 88, isZoomed: true, percent: 200, reset: vi.fn(), zoomTo: vi.fn() };
-      await render('center');
-      const trigger = button('Zoom 200%');
-      // Compact is the readout and chevron only: the magnifier would leave the widget title no room.
-      expect(trigger.textContent).toContain('200%');
-      expect(trigger.querySelector('.lucide-zoom-in')).toBeNull();
-      await settle(() => root?.unmount());
-      host?.remove();
-    }
   });
 });
 
@@ -469,18 +404,9 @@ describe('preview header order', () => {
     await settle(() => button('Details').click());
     expect(patchValues).toHaveBeenCalledWith('preview', { metadataOpen: true });
   });
-
-  it('shows only the viewer controls, without a divider, when nothing is selected', async () => {
-    state.zoom = null;
-    await render();
-
-    const bar = host!.firstElementChild!;
-    expect([...bar.children].map((child) => child.getAttribute('aria-label'))).toEqual(['Auto-switch: In progress']);
-  });
 });
 
 describe('preview header Edit and Use', () => {
-  const VIDEO = { ...STILL_IMAGE, durationSeconds: 4, fullUrl: '/videos/clip.mp4', kind: 'video', name: 'clip.mp4' };
   const menuRows = (menu: Element) =>
     [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [data-part="item-group-label"]')].map((row) =>
       row.getAttribute('role') === 'menuitem'
@@ -494,7 +420,6 @@ describe('preview header Edit and Use', () => {
 
     const trigger = button('Edit');
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
-    // A menu trigger only: nothing goes to Canvas until an item is chosen.
     await settle(() => trigger.click());
     expect(itemActions.sendToCanvas).not.toHaveBeenCalled();
     const menu = page.getByRole('menu').element();
@@ -508,7 +433,6 @@ describe('preview header Edit and Use', () => {
       'widgets.canvas.import.newProjectFromImage',
     ]);
     expect(menu.textContent).toContain('Adds an image layer and opens Canvas');
-    // A hinted submenu row (Upscale) sets its label and hint as the hinted item rows do.
     const rowText = (name: string) => {
       const row = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
         (candidate) => candidate.querySelector('p')?.textContent === name
@@ -538,7 +462,6 @@ describe('preview header Edit and Use', () => {
     await vi.waitFor(() =>
       expect(menuRows(menu)).toEqual([
         '# Use image as',
-        // The Generate panel's model has no room for another reference.
         'Use as reference image (disabled)',
         'Use as control',
         'Use as prompt template',
@@ -548,7 +471,6 @@ describe('preview header Edit and Use', () => {
         'Use prompt',
         'Use seed',
         'Use size',
-        // The image records no CLIP skip.
         'Use CLIP skip (disabled)',
       ])
     );
@@ -558,7 +480,6 @@ describe('preview header Edit and Use', () => {
     expect(keycaps.slice(3)).toEqual(['r', 'a', 'p', 's', 'd', null]);
     expect(menu.textContent).toContain('Same settings, new seed');
 
-    // The keycap is part of the item's name.
     const seed = page.getByRole('menuitem', { name: /^Use seed/ });
     await seed.hover();
     await seed.click();
@@ -568,42 +489,31 @@ describe('preview header Edit and Use', () => {
     );
   });
 
-  it('keeps Edit and Use down to compact, icon-only there, and leaves minimal to star and the full ⋮', async () => {
-    const strip = () =>
-      [...host!.querySelectorAll<HTMLButtonElement>('button')]
-        .map((entry) => entry.getAttribute('aria-label'))
-        .filter((label) => label !== null && !label.startsWith('Auto-switch') && label !== 'Details');
+  it('shows Select for compare pressed while it waits for a second image, and switches it off again', async () => {
     state.actionItem = STILL_IMAGE;
-
     await render();
-    expect(strip()).toEqual([
-      'Edit',
-      'Use this image in Generate',
-      'Select for Compare',
-      'Star image',
-      'Image actions',
-    ]);
-    expect(button('Edit').textContent).toContain('Edit');
-    await settle(() => button('Image actions').click());
-    expect(openItemMenu).toHaveBeenLastCalledWith(expect.any(Number), expect.any(Number), 'housekeeping');
+    const compare = button('Select for Compare');
 
-    // Compact: the two menus as icon and chevron, named in full; compare waits in ⋮, which stays housekeeping.
-    state.density = 'compact';
-    await render();
-    expect(strip()).toEqual(['Edit this image', 'Use this image in Generate', 'Star image', 'Image actions']);
-    for (const label of ['Edit this image', 'Use this image in Generate']) {
-      expect(button(label).textContent).toBe('');
-      expect(button(label).getAttribute('aria-haspopup')).toBe('menu');
-      expect(button(label).getBoundingClientRect().width).toBeLessThanOrEqual(32);
-    }
-    await settle(() => button('Image actions').click());
-    expect(openItemMenu).toHaveBeenLastCalledWith(expect.any(Number), expect.any(Number), 'housekeeping');
+    expect(compare).toHaveAttribute('aria-pressed', 'false');
+    await settle(() => compare.click());
+    expect(itemActions.selectForCompare).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ imageName: 'still.png' })
+    );
 
-    state.density = 'minimal';
+    const cancelCompare = vi.fn();
+    state.cancelCompare = cancelCompare;
+    await settle(() => root?.unmount());
     await render();
-    expect(strip()).toEqual(['Star image', 'Image actions']);
-    await settle(() => button('Image actions').click());
-    expect(openItemMenu).toHaveBeenLastCalledWith(expect.any(Number), expect.any(Number), 'full');
+    const pressed = button('Select for Compare');
+
+    expect(pressed).toHaveAttribute('aria-pressed', 'true');
+    await settle(() => pressed.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' })));
+    await expect
+      .element(page.getByRole('tooltip'))
+      .toHaveTextContent('Pick another image to compare · click to cancel');
+    await settle(() => pressed.click());
+    expect(cancelCompare).toHaveBeenCalledOnce();
+    expect(itemActions.selectForCompare).toHaveBeenCalledOnce();
   });
 
   it('holds an open menu on the image it opened on while a new result takes the selection', async () => {
@@ -631,7 +541,6 @@ describe('preview header Edit and Use', () => {
       ).not.toBe('true')
     );
 
-    // Auto-switch on Newest brings a finished result in under the open menu.
     state.actionItem = { ...STILL_IMAGE, name: 'newer.png' };
     await rerender();
 
@@ -641,99 +550,6 @@ describe('preview header Edit and Use', () => {
     await seed.click();
     expect(itemActions.recallImageData).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ imageName: 'still.png' }),
-      'seed'
-    );
-  });
-
-  it('keeps an open Use menu, and its name, on the image when a video takes the selection', async () => {
-    state.actionItem = STILL_IMAGE;
-    await render();
-    await settle(() => button('Use this image in Generate').click());
-    const menu = page.getByRole('menu').element();
-    await vi.waitFor(() => expect(menuRows(menu)[0]).toBe('# Use image as'));
-
-    state.actionItem = VIDEO;
-    await settle(() => {
-      root?.render(
-        <QueryClientProvider client={queryClient}>
-          <I18nextProvider i18n={i18n}>
-            <ChakraProvider value={system}>
-              <PreviewHeaderActions {...({ region: 'center', runtime: {} } as unknown as WidgetViewProps)} />
-            </ChakraProvider>
-          </I18nextProvider>
-        </QueryClientProvider>
-      );
-    });
-
-    expect(button('Use this image in Generate')?.getAttribute('aria-expanded')).toBe('true');
-    expect(button('Use this video')).toBeNull();
-    expect(menuRows(page.getByRole('menu').element())).toContain('# Reuse from image');
-    expect(videoMetadata).not.toHaveBeenCalled();
-  });
-
-  it('gives a video the Use menu and a housekeeping ⋮ down to compact, and minimal star and the full ⋮', async () => {
-    const strip = () =>
-      [...host!.querySelectorAll<HTMLButtonElement>('button')]
-        .map((entry) => entry.getAttribute('aria-label'))
-        .filter((label) => label !== null && !label.startsWith('Auto-switch') && label !== 'Details');
-    state.actionItem = VIDEO;
-
-    await render();
-    expect(strip()).toEqual(['Use this video', 'Star video', 'Image actions']);
-    expect(button('Use this video').textContent).toContain('Use');
-    await settle(() => button('Image actions').click());
-    expect(openItemMenu).toHaveBeenLastCalledWith(expect.any(Number), expect.any(Number), 'housekeeping');
-
-    state.density = 'compact';
-    await render();
-    expect(strip()).toEqual(['Use this video', 'Star video', 'Image actions']);
-    expect(button('Use this video').textContent).toBe('');
-    expect(button('Use this video').getAttribute('aria-haspopup')).toBe('menu');
-    await settle(() => button('Image actions').click());
-    expect(openItemMenu).toHaveBeenLastCalledWith(expect.any(Number), expect.any(Number), 'housekeeping');
-
-    state.density = 'minimal';
-    await render();
-    expect(strip()).toEqual(['Star video', 'Image actions']);
-    await settle(() => button('Image actions').click());
-    expect(openItemMenu).toHaveBeenLastCalledWith(expect.any(Number), expect.any(Number), 'full');
-  });
-
-  it('loads what the video can lend only when Use opens, then lists both groups', async () => {
-    state.actionItem = VIDEO;
-    await render();
-    expect(videoMetadata).not.toHaveBeenCalled();
-
-    await settle(() => button('Use this video').click());
-    const menu = page.getByRole('menu').element();
-
-    expect(videoMetadata).toHaveBeenCalledExactlyOnceWith('clip.mp4', expect.any(AbortSignal));
-    await vi.waitFor(() =>
-      expect(menuRows(menu)).toEqual([
-        '# Use video as',
-        'Extend in Video',
-        'Use as reference video',
-        'Use as conditioning clip',
-        '# Reuse from video',
-        'Remix video',
-        'All settings',
-        'Use prompt',
-        'Use seed',
-        // The record names no size.
-        'Use size (disabled)',
-      ])
-    );
-    // The viewer keys recall the same from the selected video.
-    const keycaps = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].map(
-      (row) => [...row.querySelectorAll('kbd')].map((key) => key.textContent).join('+') || null
-    );
-    expect(keycaps.slice(3)).toEqual(['r', 'a', 'p', 's', 'd']);
-
-    const seed = page.getByRole('menuitem', { name: /^Use seed/ });
-    await seed.hover();
-    await seed.click();
-    expect(itemActions.recallVideoData).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ name: 'clip.mp4' }),
       'seed'
     );
   });

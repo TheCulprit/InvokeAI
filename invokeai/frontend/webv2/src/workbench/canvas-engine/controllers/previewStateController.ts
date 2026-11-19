@@ -55,7 +55,9 @@ export interface SamPreviewState {
 
 /** Owns render-preview surfaces and monotonic async publication guards. */
 export class PreviewStateController {
-  private staged: StagedPreviewState | 'hidden' | null = null;
+  private staged: StagedPreviewState | null = null;
+  /** The user toggled the selected result off to compare it with the canvas under it: nothing draws in its place. */
+  private stagedHidden = false;
   private stagedToken = 0;
   private stagedRegions: readonly StagedRegionState[] = [];
   private readonly filters = new Map<string, FilterPreviewState>();
@@ -64,11 +66,14 @@ export class PreviewStateController {
   private sam: SamPreviewState | null = null;
 
   getStaged(): StagedPreviewState | null {
-    return this.staged === 'hidden' ? null : this.staged;
+    return this.staged;
   }
-
-  isStagedReviewActive(): boolean {
-    return this.staged !== null;
+  /**
+   * Whether the screen hides control layers, masks, regions and the regenerate tint for a staged result: while its
+   * preview shows, and while the user toggled it off to compare, so both sides of the comparison read alike.
+   */
+  hidesStagingOverlays(): boolean {
+    return this.staged !== null || this.stagedHidden;
   }
   nextStagedToken(): number {
     return ++this.stagedToken;
@@ -81,20 +86,23 @@ export class PreviewStateController {
       return false;
     }
     this.staged = preview;
+    this.stagedHidden = false;
     return true;
   }
+  /** Drops the preview and discards a decode in flight. True when the screen changes: something showed or hid. */
   clearStaged(): boolean {
-    return this.replaceStagedWithoutSurface(null);
-  }
-
-  hideStaged(): boolean {
-    return this.replaceStagedWithoutSurface('hidden');
-  }
-
-  private replaceStagedWithoutSurface(next: 'hidden' | null): boolean {
     this.stagedToken += 1;
-    const changed = this.staged !== next;
-    this.staged = next;
+    const changed = this.hidesStagingOverlays();
+    this.staged = null;
+    this.stagedHidden = false;
+    return changed;
+  }
+  /** Drops the preview's pixels but keeps hiding what it hides. True when the screen changes. */
+  hideStaged(): boolean {
+    this.stagedToken += 1;
+    const changed = this.staged !== null || !this.stagedHidden;
+    this.staged = null;
+    this.stagedHidden = true;
     return changed;
   }
 
@@ -102,8 +110,8 @@ export class PreviewStateController {
     return this.stagedRegions;
   }
   /**
-   * Replaces the pending-result outlines, each rect once (results of one run share it; selected when any of them
-   * is) with the selected one last so an overlap never hides it. False when unchanged: nothing needs repainting.
+   * Replaces the pending-result outlines, each rect once (results of one run share it; selected when any of them is)
+   * with the selected one last so an overlap never hides it. False when unchanged: nothing needs repainting.
    */
   setStagedRegions(regions: readonly StagedRegionState[]): boolean {
     const next = normalizeRegions(regions);

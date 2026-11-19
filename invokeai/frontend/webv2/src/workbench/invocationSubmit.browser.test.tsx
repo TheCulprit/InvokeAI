@@ -106,7 +106,7 @@ const submitGenerate = () => {
 
   const submission = submitResolvedInvocation({
     commands,
-    formatControlLayerError: ({ code, layerName }) => `${layerName}: ${code}`,
+    formatCanvasInvocationFailure: () => ({ message: 'canvas failure', title: 'canvas failure' }),
     formatUpscaleMetadataFailure: (name) => name,
     scopedDefaults: {},
     models: undefined,
@@ -210,8 +210,8 @@ describe('invalidating the gallery', () => {
     await settle();
     expect(server.requests).toEqual([]);
 
-    // The panel observes its own listing of live boards, invalidated above so it is read back on mount; after that,
-    // an invalidation reads back that one listing, not the one with archived boards.
+    // The panel observes its own listing of live boards, invalidated above so it is read back on mount; after that, an
+    // invalidation reads back that one listing, not the one with archived boards.
     const stopObserving = new QueryObserver(queryClient, galleryBoardsOptions()).subscribe(() => undefined);
     await vi.waitFor(() => expect(queryClient.isFetching()).toBe(0));
     server.requests.length = 0;

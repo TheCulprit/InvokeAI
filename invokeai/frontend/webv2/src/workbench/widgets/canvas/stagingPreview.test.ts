@@ -24,14 +24,13 @@ describe('selectStagedPreviewSource', () => {
     });
   });
 
-  it('keeps staged comparison active when the selected candidate preview is hidden', () => {
+  it('keeps a selected candidate the eye hid as a hidden preview, so the comparison stays unmasked', () => {
     expect(
       selectStagedPreviewSource({ ...base, isVisible: false, selectedCandidate: { imageName: 'img-1', placement } })
-    ).toEqual({ hidden: true });
+    ).toEqual({ hidden: true, imageName: 'img-1', placement });
   });
 
   it('pins the selected placeholder progress frame to its submitted rect, scaled to fill it', () => {
-    // The submitted rect, not the frame's native 64x64 and not wherever the bbox is now.
     expect(selectStagedPreviewSource({ ...base, progressImage: frame, progressRect: submitted })).toEqual({
       dataUrl: frame.dataUrl,
       placement: { ...submitted, opacity: 1 },
@@ -55,11 +54,12 @@ describe('selectStagedPreviewSource', () => {
 describe('stagedPreviewKey', () => {
   it('is stable per source and distinguishes the source kinds', () => {
     expect(stagedPreviewKey(null)).toBe('none');
-    expect(stagedPreviewKey({ hidden: true })).not.toBe(stagedPreviewKey(null));
     expect(stagedPreviewKey({ imageName: 'a', placement })).toBe(stagedPreviewKey({ imageName: 'a', placement }));
     expect(stagedPreviewKey({ imageName: 'a', placement })).not.toBe(stagedPreviewKey({ imageName: 'b', placement }));
-    // A new progress frame (different data URL) yields a new key so the effect re-fires.
     expect(stagedPreviewKey({ dataUrl: 'AA', placement })).not.toBe(stagedPreviewKey({ dataUrl: 'BB', placement }));
+    expect(stagedPreviewKey({ hidden: true, imageName: 'a', placement })).not.toBe(
+      stagedPreviewKey({ imageName: 'a', placement })
+    );
   });
 
   it('includes every placement field', () => {

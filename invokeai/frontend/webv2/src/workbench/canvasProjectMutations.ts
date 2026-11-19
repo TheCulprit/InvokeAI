@@ -73,7 +73,8 @@ const pickStagedSlot = (project: Project, imageIndex: number): Project => {
   const selectedImageIndex = clampStagedImageIndex(imageIndex, slots.length);
   const slot = slots[selectedImageIndex];
   const { stagingArea } = project.canvas;
-  const autoSwitchMode = slot ? pickStagedSlotAutoSwitch(slot).mode : stagingArea.autoSwitchMode;
+  const autoSwitchMode =
+    slot && !project.settings.canvasAutoSwitchLocked ? pickStagedSlotAutoSwitch(slot).mode : stagingArea.autoSwitchMode;
 
   return selectedImageIndex === stagingArea.selectedImageIndex && autoSwitchMode === stagingArea.autoSwitchMode
     ? project

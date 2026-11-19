@@ -23,6 +23,7 @@ const AUTO_SWITCH_POSITIONING = { placement: 'bottom-end' } as const;
 export const PreviewHeaderActions = (_props: WidgetViewProps) => {
   const livePreview = useLivePreviewFollow();
   const autoSwitch = useActiveProjectSelector((project) => project.settings.viewerAutoSwitch);
+  const autoSwitchLocked = useActiveProjectSelector((project) => project.settings.viewerAutoSwitchLocked === true);
   const {
     actionItem,
     actions,
@@ -52,6 +53,10 @@ export const PreviewHeaderActions = (_props: WidgetViewProps) => {
       account.updateProjectPreferences({ viewerAutoSwitch: mode });
     },
     [account, livePreview]
+  );
+  const setAutoSwitchLocked = useCallback(
+    (locked: boolean) => account.updateProjectPreferences({ viewerAutoSwitchLocked: locked }),
+    [account]
   );
   const setDetailsOpen = useCallback(
     (open: boolean) => widgets.patchValues('preview', { metadataOpen: open }),
@@ -83,7 +88,8 @@ export const PreviewHeaderActions = (_props: WidgetViewProps) => {
         <PreviewZoomMenu density={controlDensity} zoom={zoomControls} />
       ) : null}
       <AutoSwitchMenu
-        allowLocked
+        locked={autoSwitchLocked}
+        onLockedChange={setAutoSwitchLocked}
         chrome="header"
         density="compact"
         positioning={AUTO_SWITCH_POSITIONING}

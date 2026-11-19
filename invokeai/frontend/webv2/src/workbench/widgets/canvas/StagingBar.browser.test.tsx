@@ -145,6 +145,7 @@ const renderStagingBar = async (
                   antialiasProgressImages={false}
                   areThumbnailsVisible
                   autoSwitchMode="off"
+                  autoSwitchLocked={false}
                   canAccept
                   hasMultipleSlots={slotCount > 1}
                   isGenerating={isGenerating}
@@ -163,6 +164,7 @@ const renderStagingBar = async (
                   onSaveToGallery={onSaveToGallery}
                   onSaveToLayerAndContinue={onSaveToLayerAndContinue}
                   onSetAutoSwitch={noop}
+                  onSetAutoSwitchLocked={noop}
                   onStopGenerating={onStopGenerating}
                   onToggleThumbnails={noop}
                   onToggleVisibility={noop}
@@ -252,6 +254,33 @@ describe('StagingBar thumbnail strip', () => {
     expect(onAccept).toHaveBeenCalledOnce();
   });
 
+  it('keeps every toolbar control inside a 360px canvas while generating with a finished result selected', async () => {
+    const { overlay, viewport } = await renderStagingBar(
+      2,
+      0,
+      noop,
+      noop,
+      noop,
+      (index) => (index === 0 ? makeSlot(index) : makePlaceholder(index)),
+      { canvasWidth: 360, isGenerating: true }
+    );
+    const staging = viewport.closest<HTMLElement>('[tabindex="-1"]')!;
+    await Promise.all(staging.getAnimations().map((animation) => animation.finished));
+    const bounds = overlay.getBoundingClientRect();
+    const controls = [...host!.querySelectorAll<HTMLButtonElement>('button')].filter(
+      (button) => !button.hasAttribute('data-staging-thumbnail') && button.getBoundingClientRect().width > 0
+    );
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) {
+      const rect = control.getBoundingClientRect();
+      const name = control.getAttribute('aria-label') ?? control.textContent;
+      expect(rect.left, `${name}: left`).toBeGreaterThanOrEqual(bounds.left);
+      expect(rect.right, `${name}: right`).toBeLessThanOrEqual(bounds.right);
+      expect(rect.bottom, `${name}: bottom`).toBeLessThanOrEqual(bounds.bottom);
+    }
+    await expect.element(page.getByRole('button', { exact: true, name: 'Lock Auto-switch' })).toBeVisible();
+  });
+
   it('stops generating while a finished result is selected and the next image of its run starts', async () => {
     const onStopGenerating = vi.fn();
     await renderStagingBar(
@@ -294,6 +323,7 @@ describe('StagingBar focus', () => {
                 antialiasProgressImages={false}
                 areThumbnailsVisible
                 autoSwitchMode="off"
+                autoSwitchLocked={false}
                 canAccept
                 hasMultipleSlots={remaining.length > 1}
                 isGenerating={false}
@@ -312,6 +342,7 @@ describe('StagingBar focus', () => {
                 onSaveToGallery={() => Promise.resolve()}
                 onSaveToLayerAndContinue={noop}
                 onSetAutoSwitch={noop}
+                onSetAutoSwitchLocked={noop}
                 onStopGenerating={() => setRemaining((current) => current.filter((slot) => slot.kind === 'candidate'))}
                 onToggleThumbnails={noop}
                 onToggleVisibility={noop}
@@ -547,6 +578,7 @@ describe('StagingBar picks and Auto-switch', () => {
               antialiasProgressImages={false}
               areThumbnailsVisible
               autoSwitchMode={stagingArea.autoSwitchMode}
+              autoSwitchLocked={project.settings.canvasAutoSwitchLocked === true}
               canAccept
               hasMultipleSlots={slots.length > 1}
               isGenerating
@@ -565,6 +597,15 @@ describe('StagingBar picks and Auto-switch', () => {
               onSaveToGallery={() => Promise.resolve()}
               onSaveToLayerAndContinue={noop}
               onSetAutoSwitch={(mode) => mutate({ mode, type: 'setCanvasStagingAutoSwitch' })}
+              onSetAutoSwitchLocked={(locked) =>
+                setState((current) =>
+                  workbenchReducer(current, {
+                    type: 'setActiveProjectSettings',
+                    projectId: project.id,
+                    settings: { canvasAutoSwitchLocked: locked },
+                  })
+                )
+              }
               onStopGenerating={noop}
               onToggleThumbnails={noop}
               onToggleVisibility={noop}
@@ -592,6 +633,30 @@ describe('StagingBar picks and Auto-switch', () => {
   const autoSwitch = () => page.getByRole('button', { name: /^Auto-switch:/ });
   const thumbnail = (number: number) =>
     page.getByRole('button', { exact: true, name: `Select staged candidate ${number}` });
+
+  it('locks independently of the three modes and keeps navigation available while locked', async () => {
+    await renderWired('latest');
+
+    const lock = () => page.getByRole('button', { exact: true, name: 'Lock Auto-switch' });
+    const unlock = () => page.getByRole('button', { exact: true, name: 'Unlock Auto-switch' });
+    await expect.element(lock()).toHaveAttribute('aria-pressed', 'false');
+    await lock().click();
+    await expect.element(unlock()).toHaveAttribute('aria-pressed', 'true');
+    await expect.element(autoSwitch()).toHaveAccessibleName('Auto-switch: Newest');
+    await thumbnail(1).click();
+    await expect.element(thumbnail(1)).toHaveAttribute('aria-current', 'true');
+    await expect.element(autoSwitch()).toHaveAccessibleName('Auto-switch: Newest');
+
+    await autoSwitch().click();
+    expect(page.getByRole('menuitemradio').elements()).toHaveLength(3);
+    await page.getByRole('menuitemradio', { exact: true, name: 'In progress' }).click();
+    await expect.element(autoSwitch()).toHaveAccessibleName('Auto-switch: In progress');
+    await expect.element(unlock()).toHaveAttribute('aria-pressed', 'true');
+    await unlock().click();
+    await expect.element(autoSwitch()).toHaveAccessibleName('Auto-switch: In progress');
+    await thumbnail(2).click();
+    await expect.element(autoSwitch()).toHaveAccessibleName('Auto-switch: Off');
+  });
 
   it.each(['latest', 'progress'] as const)(
     'clicking off the newest result under %s turns Auto-switch Off',

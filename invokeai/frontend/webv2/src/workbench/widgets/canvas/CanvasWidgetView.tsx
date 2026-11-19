@@ -113,11 +113,16 @@ const CanvasShortcutHintRegistration = ({
 export const CanvasWidgetView = ({ runtime, instance }: WidgetViewProps) => {
   const { t } = useTranslation();
   const notify = useNotify();
-  const { canvas: canvasCommands, notifications, queue } = useWorkbenchCommands();
+  const { account, canvas: canvasCommands, notifications, queue } = useWorkbenchCommands();
   const canvasDispatch = useCanvasProjectMutationDispatch();
   const queries = useWorkbenchQueries();
   const engine = useCanvasEngine();
   const projectId = useActiveProjectId();
+  const autoSwitchLocked = useActiveProjectSelector((project) => project.settings.canvasAutoSwitchLocked === true);
+  const setAutoSwitchLocked = useCallback(
+    (locked: boolean) => account.updateProjectPreferences({ canvasAutoSwitchLocked: locked }),
+    [account]
+  );
   const canvas = useActiveProjectSelector((project) => project.canvas);
   const queueItems = useActiveProjectSelector((project) => project.queue.items);
   const antialiasProgressImages = useWorkbenchPreferenceSelector((preferences) => preferences.antialiasProgressImages);
@@ -672,6 +677,8 @@ export const CanvasWidgetView = ({ runtime, instance }: WidgetViewProps) => {
                 antialiasProgressImages={antialiasProgressImages}
                 areThumbnailsVisible={stagingArea.areThumbnailsVisible}
                 autoSwitchMode={stagingArea.autoSwitchMode}
+                autoSwitchLocked={autoSwitchLocked}
+                onSetAutoSwitchLocked={setAutoSwitchLocked}
                 canAccept={canAcceptStagedImage}
                 hasMultipleSlots={hasMultipleStagingSlots}
                 isGenerating={isCanvasGenerationInFlight}

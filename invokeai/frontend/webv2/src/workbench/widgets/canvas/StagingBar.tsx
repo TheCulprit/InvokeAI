@@ -71,7 +71,7 @@ const NARROW_HIDDEN_CSS = { [NARROW]: { display: 'none' } } as const;
 /** Buttons whose text goes while narrow keep a square icon footprint. */
 const NARROW_ICON_BUTTON_CSS = { [NARROW]: { minW: '8', px: '0' } } as const;
 /** Closer controls once narrow: a finished result's actions and Stop generating fit side by side. */
-const NARROW_BAR_CSS = { [NARROW]: { gap: '0.5' } } as const;
+const NARROW_BAR_CSS = { [NARROW]: { flexWrap: 'wrap', gap: '0.5', justifyContent: 'center' } } as const;
 /** Marks a thumbnail with its slot index, for roving focus and focus restore. */
 const THUMBNAIL_ATTR = 'data-staging-thumbnail';
 /** Marks the previous/next buttons, a focus target once no thumbnail shows. */
@@ -84,6 +84,8 @@ interface StagingBarProps {
   antialiasProgressImages: boolean;
   areThumbnailsVisible: boolean;
   autoSwitchMode: AutoSwitchMode;
+  autoSwitchLocked: boolean;
+  onSetAutoSwitchLocked: (locked: boolean) => void;
   canAccept: boolean;
   hasMultipleSlots: boolean;
   isGenerating: boolean;
@@ -113,6 +115,8 @@ export const StagingBar = ({
   antialiasProgressImages,
   areThumbnailsVisible,
   autoSwitchMode,
+  autoSwitchLocked,
+  onSetAutoSwitchLocked,
   canAccept,
   hasMultipleSlots,
   isGenerating,
@@ -427,6 +431,8 @@ export const StagingBar = ({
             <CanvasFloatingBarDivider css={NARROW_HIDDEN_CSS} />
 
             <AutoSwitchMenu
+              locked={autoSwitchLocked}
+              onLockedChange={onSetAutoSwitchLocked}
               density="full"
               positioning={MENU_POSITIONING}
               triggerCss={NARROW_ICON_BUTTON_CSS}

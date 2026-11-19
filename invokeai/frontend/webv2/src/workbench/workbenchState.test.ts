@@ -3526,32 +3526,35 @@ describe('workbenchReducer Phase 5 generation flow', () => {
     expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:selected.png');
   });
 
-  it('follows the next finished result after a manual Gallery selection under Newest (locked)', () => {
-    let state = primeGenerate();
-    state = workbenchReducer(state, { destination: 'gallery', type: 'setInvocationDestination' });
-    state = workbenchReducer(state, {
-      settings: { viewerAutoSwitch: 'latest-locked' },
-      type: 'setActiveProjectSettings',
-    });
-    state = submitGenerate(state);
-    const project = getActiveProject(state);
-    const queueItem = project.queue.items[0]!;
+  it.each(['latest', 'progress'] as const)(
+    'keeps locked %s after browsing and follows the next Gallery result',
+    (mode) => {
+      let state = primeGenerate();
+      state = workbenchReducer(state, { destination: 'gallery', type: 'setInvocationDestination' });
+      state = workbenchReducer(state, {
+        settings: { viewerAutoSwitch: mode, viewerAutoSwitchLocked: true },
+        type: 'setActiveProjectSettings',
+      });
+      state = submitGenerate(state);
+      const project = getActiveProject(state);
+      const queueItem = project.queue.items[0]!;
 
-    state = workbenchReducer(state, { item: createGalleryImageItem('selected.png'), type: 'selectGalleryItem' });
+      state = workbenchReducer(state, { item: createGalleryImageItem('selected.png'), type: 'selectGalleryItem' });
 
-    expect(getActiveProject(state).settings.viewerAutoSwitch).toBe('latest-locked');
-    expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:selected.png');
+      expect(getActiveProject(state).settings.viewerAutoSwitch).toBe(mode);
+      expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:selected.png');
 
-    state = workbenchReducer(state, {
-      images: [createImage('completed.png', queueItem.id)],
-      projectId: project.id,
-      queueItemId: queueItem.id,
-      type: 'routeQueueItemResults',
-    });
+      state = workbenchReducer(state, {
+        images: [createImage('completed.png', queueItem.id)],
+        projectId: project.id,
+        queueItemId: queueItem.id,
+        type: 'routeQueueItemResults',
+      });
 
-    expect(getActiveProject(state).settings.viewerAutoSwitch).toBe('latest-locked');
-    expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:completed.png');
-  });
+      expect(getActiveProject(state).settings.viewerAutoSwitch).toBe(mode);
+      expect(getProjectWidgetValues(getActiveProject(state), 'gallery').selectedImageName).toBe('image:completed.png');
+    }
+  );
 
   it.each(['latest', 'progress'] as const)('selects each finished result under %s', (mode) => {
     let state = primeGenerate();
@@ -5038,6 +5041,26 @@ describe('workbenchReducer canvas staging auto-switch + canvas submission', () =
       return { firstFrame, land, state };
     };
 
+    it.each(['frame', 'result'] as const)('releases a locked live browse pin when the next %s arrives', (event) => {
+      const { firstFrame, land, state: started } = startBatch('progress');
+      let state = workbenchReducer(started, {
+        settings: { canvasAutoSwitchLocked: true },
+        type: 'setActiveProjectSettings',
+      });
+      state = firstFrame(state, 1);
+      if (event === 'result') {
+        state = firstFrame(state, 3);
+      }
+      state = workbenchReducer(state, { imageIndex: 0, type: 'setStagedImageIndex' });
+      expect(selectedStagingSlot(state)).toMatchObject({ itemIndex: 1, kind: 'placeholder' });
+
+      state = event === 'frame' ? firstFrame(state, 2) : land(state, 12, 'second.png');
+
+      expect(getCanvas(state).stagingArea.autoSwitchMode).toBe('progress');
+      expect(selectedStagingSlot(state)).toMatchObject({ itemIndex: event === 'frame' ? 2 : 3, kind: 'placeholder' });
+      expect(state.canvasStagingFollow?.[state.activeProjectId]?.pinnedSlotId).toBeNull();
+    });
+
     it('stepping onto a finished result pauses Auto-switch as clicking it does', () => {
       const { land, state: started } = startBatch('latest');
       let state = land(land(started, 11, 'first.png'), 12, 'second.png');
@@ -5090,6 +5113,46 @@ describe('workbenchReducer canvas staging auto-switch + canvas submission', () =
     state = workbenchReducer(state, { projectId: a.projectId, type: 'closeProject' });
     expect(state.canvasStagingFollow?.[a.projectId]).toBeUndefined();
     expect(state.canvasStagingFollow?.[b.projectId]?.pinnedSlotId).toBe(`${b.queueItemId}:0`);
+  });
+
+  it('lets locked In progress browse a staged result until the next first frame', () => {
+    let state = submitGenerate(primeGenerate(undefined, { batchCount: 3 }));
+    const project = getActiveProject(state);
+    const queueItem = project.queue.items[0]!;
+    state = workbenchReducer(state, { settings: { canvasAutoSwitchLocked: true }, type: 'setActiveProjectSettings' });
+    state = workbenchReducer(state, { mode: 'progress', type: 'setCanvasStagingAutoSwitch' });
+    state = workbenchReducer(state, {
+      backendItemIds: [11, 12, 13],
+      projectId: project.id,
+      queueItemId: queueItem.id,
+      type: 'markQueueItemBackendSubmitted',
+    });
+    state = workbenchReducer(state, {
+      backendItemId: 11,
+      images: [createImage('one.png', queueItem.id)],
+      projectId: project.id,
+      queueItemId: queueItem.id,
+      type: 'routeQueueItemPartialResults',
+    });
+    state = workbenchReducer(state, {
+      itemIndex: 2,
+      projectId: project.id,
+      queueItemId: queueItem.id,
+      type: 'noteQueueItemFirstProgressFrame',
+    });
+    expect(selectedStagingSlot(state)).toMatchObject({ itemIndex: 2, kind: 'placeholder' });
+    state = workbenchReducer(state, { imageIndex: 0, type: 'setStagedImageIndex' });
+    expect(getCanvas(state).stagingArea.autoSwitchMode).toBe('progress');
+    expect(selectedStagingSlot(state)).toMatchObject({ kind: 'candidate', imageName: 'one.png' });
+    state = workbenchReducer(state, { type: 'setCanvasBbox', bbox: { x: 0, y: 0, width: 512, height: 512 } });
+    expect(selectedStagingSlot(state)).toMatchObject({ kind: 'candidate', imageName: 'one.png' });
+    state = workbenchReducer(state, {
+      itemIndex: 3,
+      projectId: project.id,
+      queueItemId: queueItem.id,
+      type: 'noteQueueItemFirstProgressFrame',
+    });
+    expect(selectedStagingSlot(state)).toMatchObject({ itemIndex: 3, kind: 'placeholder' });
   });
 
   const createCanvasGenerateSnapshot = () => ({

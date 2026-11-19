@@ -132,7 +132,7 @@ const mocks = vi.hoisted(() => {
       id: 'project-1',
       widgetRegions: { center: { activeInstanceId: 'preview-instance', instanceIds: ['preview-instance'] } },
       queue: { items: [] as unknown[] },
-      settings: { antialiasProgressImages: false, viewerAutoSwitch: 'off' },
+      settings: { antialiasProgressImages: false, viewerAutoSwitch: 'off', viewerAutoSwitchLocked: false },
       widgetInstances: {
         gallery: {
           state: {
@@ -839,6 +839,7 @@ beforeEach(() => {
   vi.mocked(requestGalleryItemReveal).mockClear();
   mocks.project.queue.items = [];
   mocks.project.settings.viewerAutoSwitch = 'off';
+  mocks.project.settings.viewerAutoSwitchLocked = false;
   delete (mocks.project.widgetInstances.gallery.state.values as Record<string, unknown>).compareImage;
   delete (mocks.project.widgetInstances.gallery.state.values as Record<string, unknown>).galleryPage;
   delete (mocks.project.widgetInstances.gallery.state.values as Record<string, unknown>).imageOrderDir;
@@ -1537,21 +1538,73 @@ describe('preview keyboard navigation boundary', () => {
     expect(mocks.commands.gallery.selectItem).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps Newest locked when a running session is selected or reached by navigation', async () => {
-    mocks.project.settings.viewerAutoSwitch = 'latest-locked';
-    mocks.project.queue.items = [queueItem];
-    mocks.useActiveProgressTarget.mockReturnValue({ itemIndex: 1, queueItemId: 'queue-item-live' });
-    setGalleryValues({ selectedImage: legacyImage('newest', '2026-07-21T00:00:00.000Z'), selectedImageName: 'newest' });
+  it.each(['off', 'latest', 'progress'] as const)(
+    'allows live browsing with %s locked without changing the mode',
+    async (mode) => {
+      mocks.project.settings.viewerAutoSwitch = mode;
+      mocks.project.settings.viewerAutoSwitchLocked = true;
+      mocks.project.queue.items = [queueItem];
+      mocks.useActiveProgressTarget.mockReturnValue({ itemIndex: 1, queueItemId: 'queue-item-live' });
+      setGalleryValues({
+        selectedImage: legacyImage('newest', '2026-07-21T00:00:00.000Z'),
+        selectedImageName: 'newest',
+      });
 
+      await render();
+      const thumb = host!.querySelector<HTMLButtonElement>('[data-preview-live-thumb="queue-item-live:1"]');
+      expect(thumb?.getAttribute('aria-disabled')).not.toBe('true');
+      await act(() => thumb?.click());
+
+      expect(mocks.commands.account.updateProjectPreferences).not.toHaveBeenCalled();
+      expect(followControls.pinnedSessionId).toBe('queue-item-live:1');
+      expect(followControls.followedSessionId).toBe('queue-item-live:1');
+    }
+  );
+
+  it('lets locked In progress show a browsed result until another image has its first frame', async () => {
+    const slotOne = { itemIndex: 1, queueItemId: 'queue-item-live' };
+    const slotTwo = { itemIndex: 2, queueItemId: 'queue-item-live' };
+    mocks.project.queue.items = [{ ...queueItem, backendItemIds: [1, 2] }];
+    mocks.project.settings.viewerAutoSwitch = 'progress';
+    mocks.project.settings.viewerAutoSwitchLocked = true;
+    mocks.useActiveProgressTarget.mockReturnValue(slotOne);
+    mocks.framedProgressTargets = [slotOne];
+    mocks.useProgressImage.mockReturnValue({
+      dataUrl: 'data:image/png;base64,one',
+      height: 64,
+      target: slotOne,
+      width: 64,
+    });
     await render();
-    const thumb = host!.querySelector<HTMLButtonElement>('[data-preview-live-thumb="queue-item-live:1"]');
-    expect(thumb?.getAttribute('aria-disabled')).toBe('true');
-    expect(thumb?.tabIndex).toBe(-1);
-    await pressArrow('ArrowLeft');
-    await act(() => followControls.follow('queue-item-live:1'));
+    expect(followControls.followedSessionId).toBe('queue-item-live:1');
 
+    await pressArrow('ArrowRight');
+    await commitLastSelection();
+    expect(followControls.followedSessionId).toBeNull();
     expect(mocks.commands.account.updateProjectPreferences).not.toHaveBeenCalled();
-    expect(followControls.pinnedSessionId).toBeNull();
+    expect(host!.querySelector<HTMLImageElement>('img[data-preview-filmstrip]')).toBeNull();
+    mocks.runningProgressTargets = [];
+    await rerender();
+    expect(followControls.followedSessionId).toBeNull();
+
+    mocks.useActiveProgressTarget.mockReturnValue(null);
+    mocks.framedProgressTargets = [];
+    mocks.useProgressImage.mockReturnValue(null);
+    await rerender();
+    expect(followControls.followedSessionId).toBeNull();
+
+    mocks.runningProgressTargets = [slotTwo];
+    mocks.useActiveProgressTarget.mockReturnValue(slotTwo);
+    mocks.framedProgressTargets = [slotOne, slotTwo];
+    mocks.useProgressImage.mockReturnValue({
+      dataUrl: 'data:image/png;base64,two',
+      height: 64,
+      target: slotTwo,
+      width: 64,
+    });
+    await rerender();
+    expect(followControls.followedSessionId).toBe('queue-item-live:2');
+    expect(mocks.project.settings.viewerAutoSwitch).toBe('progress');
   });
 
   it("holds the finished slot's last frame while its result routes, then shows the result until the next first frame", async () => {

@@ -44,7 +44,6 @@ vi.mock('@features/gallery/react', () => ({
 }));
 vi.mock('@workbench/widgets/preview/livePreviewFollow', () => ({
   useLivePreviewFollow: () => ({
-    canFollowProgress: store.getSnapshot().activeProject.settings.viewerAutoSwitch !== 'latest-locked',
     sessions: [],
     gallerySessions: [],
     pinnedSessionId: null,
@@ -52,6 +51,7 @@ vi.mock('@workbench/widgets/preview/livePreviewFollow', () => ({
     follow: livePreviewFollow,
     pin: vi.fn(),
     showAll: vi.fn(),
+    browse: vi.fn(),
   }),
 }));
 vi.mock('@workbench/projects/useProjectFileActions', () => ({ useExportLibraryProject: () => noop }));
@@ -172,17 +172,16 @@ describe('Gallery live-follow adapter', () => {
     expect(modes).toEqual([true, false, false]);
   });
 
-  it('keeps the current view when following progress is disabled by Newest (locked)', () => {
-    const follow = renderAdapter().followProgressSession!;
+  it('keeps live navigation available while Newest is locked', () => {
     const galleryView = activeProject().widgetRegions.center.instanceIds.find((id) => id !== previewId())!;
     store.commands.widgets.select({ region: 'center', widgetId: galleryView });
-    store.commands.account.updateProjectPreferences({ viewerAutoSwitch: 'latest-locked' });
+    store.commands.account.updateProjectPreferences({ viewerAutoSwitch: 'latest', viewerAutoSwitchLocked: true });
 
-    expect(renderAdapter().followProgressSession).toBeUndefined();
-    follow('run:2', { revealPreview: true });
+    renderAdapter().followProgressSession!('run:2', { revealPreview: true });
 
-    expect(livePreviewFollow).not.toHaveBeenCalled();
-    expect(activeProject().widgetRegions.center.activeInstanceId).toBe(galleryView);
+    expect(livePreviewFollow).toHaveBeenCalledWith('run:2');
+    expect(activeProject().widgetRegions.center.activeInstanceId).toBe(previewId());
+    expect(activeProject().settings).toMatchObject({ viewerAutoSwitch: 'latest', viewerAutoSwitchLocked: true });
   });
 
   it('ignores a follow retained across an account change', () => {

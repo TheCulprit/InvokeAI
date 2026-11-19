@@ -25,10 +25,24 @@ describe('normalizeProjectSettings', () => {
   });
 
   it('keeps a saved Auto-switch mode and reads anything else as Off', () => {
-    for (const mode of ['off', 'latest', 'latest-locked', 'progress'] as const) {
+    for (const mode of ['off', 'latest', 'progress'] as const) {
       expect(normalizeProjectSettings({ viewerAutoSwitch: mode }).viewerAutoSwitch).toBe(mode);
     }
     expect(normalizeProjectSettings({ viewerAutoSwitch: 'always' as unknown as 'off' }).viewerAutoSwitch).toBe('off');
+  });
+
+  it('migrates the old locked mode and keeps the two locks independent', () => {
+    expect(normalizeProjectSettings({ viewerAutoSwitch: 'latest-locked' })).toEqual({
+      viewerAutoSwitch: 'latest',
+      viewerAutoSwitchLocked: true,
+    });
+    expect(normalizeProjectSettings({ viewerAutoSwitch: 'latest-locked', viewerAutoSwitchLocked: false })).toEqual({
+      viewerAutoSwitch: 'latest',
+      viewerAutoSwitchLocked: false,
+    });
+    expect(
+      normalizeProjectSettings({ viewerAutoSwitch: 'off', viewerAutoSwitchLocked: true, canvasAutoSwitchLocked: false })
+    ).toEqual({ viewerAutoSwitch: 'off', viewerAutoSwitchLocked: true, canvasAutoSwitchLocked: false });
   });
 
   it('starts new projects on In progress', () => {
@@ -72,12 +86,16 @@ describe('getEffectiveProjectSettings', () => {
       useNsfwChecker: false,
       useWatermark: false,
       viewerAutoSwitch: 'latest',
+      viewerAutoSwitchLocked: false,
+      canvasAutoSwitchLocked: false,
     });
     expect(getEffectiveProjectSettings(settings, undefined)).toEqual({
       useCpuNoise: true,
       useNsfwChecker: false,
       useWatermark: false,
       viewerAutoSwitch: 'latest',
+      viewerAutoSwitchLocked: false,
+      canvasAutoSwitchLocked: false,
     });
   });
 

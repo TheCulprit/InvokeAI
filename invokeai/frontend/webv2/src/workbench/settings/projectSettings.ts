@@ -7,6 +7,8 @@ export const BUILT_IN_PROJECT_SETTINGS: EffectiveProjectSettings = {
   useWatermark: false,
   // New projects; a stored project without the field reads as `off` (see normalizeProjectSettings).
   viewerAutoSwitch: 'progress',
+  viewerAutoSwitchLocked: false,
+  canvasAutoSwitchLocked: false,
 };
 
 /** The project settings that layer over the user's `scopedDefaults.generate`; `viewerAutoSwitch` is project-only. */
@@ -107,7 +109,6 @@ export const getLayeredKeys = (ownerId: string): Readonly<Record<string, Layered
 /** A record, not the policy's list, to keep the Queue contracts out of the boot graph; exhaustive by type. */
 const VIEWER_AUTO_SWITCH_MODES: Readonly<Record<ViewerAutoSwitchMode, true>> = {
   latest: true,
-  'latest-locked': true,
   off: true,
   progress: true,
 };
@@ -115,11 +116,26 @@ const VIEWER_AUTO_SWITCH_MODES: Readonly<Record<ViewerAutoSwitchMode, true>> = {
 export const isViewerAutoSwitchMode = (value: unknown): value is ViewerAutoSwitchMode =>
   typeof value === 'string' && Object.hasOwn(VIEWER_AUTO_SWITCH_MODES, value);
 
-export const normalizeProjectSettings = (settings?: Partial<ProjectSettings>): ProjectSettings => {
+export const normalizeProjectSettings = (
+  settings?: Partial<Omit<ProjectSettings, 'viewerAutoSwitch'>> & { viewerAutoSwitch?: unknown }
+): ProjectSettings => {
   const normalized: ProjectSettings = {
     // Absent means a project saved before the mode existed, whatever its old progress toggle said: it starts `off`.
-    viewerAutoSwitch: isViewerAutoSwitchMode(settings?.viewerAutoSwitch) ? settings.viewerAutoSwitch : 'off',
+    viewerAutoSwitch:
+      settings?.viewerAutoSwitch === 'latest-locked'
+        ? 'latest'
+        : isViewerAutoSwitchMode(settings?.viewerAutoSwitch)
+          ? settings.viewerAutoSwitch
+          : 'off',
   };
+  if (typeof settings?.viewerAutoSwitchLocked === 'boolean') {
+    normalized.viewerAutoSwitchLocked = settings.viewerAutoSwitchLocked;
+  } else if (settings?.viewerAutoSwitch === 'latest-locked') {
+    normalized.viewerAutoSwitchLocked = true;
+  }
+  if (typeof settings?.canvasAutoSwitchLocked === 'boolean') {
+    normalized.canvasAutoSwitchLocked = settings.canvasAutoSwitchLocked;
+  }
   for (const key of LAYERED_PROJECT_SETTING_KEYS) {
     const value = settings?.[key];
     if (typeof value === 'boolean') {
@@ -151,6 +167,8 @@ export const getEffectiveProjectSettings = (
   const effective: EffectiveProjectSettings = {
     ...BUILT_IN_PROJECT_SETTINGS,
     viewerAutoSwitch: settings.viewerAutoSwitch,
+    viewerAutoSwitchLocked: settings.viewerAutoSwitchLocked === true,
+    canvasAutoSwitchLocked: settings.canvasAutoSwitchLocked === true,
   };
   for (const key of LAYERED_PROJECT_SETTING_KEYS) {
     const pinned = settings[key];

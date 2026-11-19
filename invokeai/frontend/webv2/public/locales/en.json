@@ -3922,7 +3922,6 @@
       "viewGraph": "View graph"
     },
     "preview": {
-      "autoSwitchLatestLocked": "Newest (locked)",
       "boardAndItem": "{{board}} / {{name}}",
       "chooseAnotherItem": "{{label}}. Choose another item",
       "commands": {
@@ -4650,6 +4649,8 @@
         "autoSwitch": "Auto-switch",
         "autoSwitchCurrent": "Auto-switch: {{mode}}",
         "autoSwitchLatest": "Newest",
+        "lockAutoSwitch": "Lock Auto-switch",
+        "unlockAutoSwitch": "Unlock Auto-switch",
         "autoSwitchOff": "Off",
         "autoSwitchProgress": "In progress",
         "boardFailed": "Saved to Gallery, but couldn't add it to {{board}}",

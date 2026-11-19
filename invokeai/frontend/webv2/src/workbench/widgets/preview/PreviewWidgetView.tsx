@@ -1,5 +1,5 @@
 import type { SystemStyleObject } from '@chakra-ui/react';
-import type { QueueActiveSession, QueueItem, QueueProgressSession } from '@features/queue/contracts';
+import type { QueueActiveSession, QueueItem } from '@features/queue/contracts';
 import type { WidgetViewProps } from '@workbench/widgetContracts';
 
 import { Box, Flex, HStack, Icon, Spinner, Stack, Text } from '@chakra-ui/react';
@@ -119,7 +119,6 @@ export const getVideoFrameCopyNotice = (
     : { kind: 'error', title: translate(VIDEO_FRAME_COPY_FAILURE_KEYS[result.reason]) };
 
 const EMPTY_BOARDS: GalleryBoard[] = [];
-const EMPTY_PROGRESS_SESSIONS: readonly QueueProgressSession[] = [];
 
 const fallbackBoards: GalleryBoard[] = [
   {
@@ -263,11 +262,12 @@ export const PreviewWidgetView = ({ region, runtime }: WidgetViewProps) => {
 
   const selectGalleryItemAtPage = useCallback(
     (item: GalleryItem, selectionPage: number, absoluteIndex?: number) => {
+      livePreview.browse();
       gallery.selectItem(item, undefined, selectionPage, true);
       // Deliberate navigation: the grid follows it, unlike auto-selection.
       requestGalleryItemReveal(toGalleryItemKey(item), captureAccountScope().signal, absoluteIndex);
     },
-    [gallery]
+    [gallery, livePreview]
   );
   const {
     boardItems,
@@ -286,7 +286,7 @@ export const PreviewWidgetView = ({ region, runtime }: WidgetViewProps) => {
     followSession: livePreview.follow,
     isComparing,
     localItems,
-    progressSessions: livePreview.canFollowProgress ? livePreview.gallerySessions : EMPTY_PROGRESS_SESSIONS,
+    progressSessions: livePreview.gallerySessions,
     queueItems,
     selectGalleryItem: selectGalleryItemAtPage,
     selectedImageQuery,
@@ -529,7 +529,7 @@ export const PreviewWidgetView = ({ region, runtime }: WidgetViewProps) => {
             leadingItemCount: stripItemCount,
             onCompare: compareFilmstripItem,
             onContextMenu: openFilmstripItemContextMenu,
-            onFollowSession: livePreview.canFollowProgress ? livePreview.follow : undefined,
+            onFollowSession: livePreview.follow,
             onSelect: selectPreviewItem,
             onUnpinSession: livePreview.showAll,
             sessions: livePreview.gallerySessions,
@@ -542,7 +542,6 @@ export const PreviewWidgetView = ({ region, runtime }: WidgetViewProps) => {
       compareFilmstripItem,
       density,
       isFilmstripVisible,
-      livePreview.canFollowProgress,
       livePreview.follow,
       livePreview.followedSessionId,
       livePreview.gallerySessions,

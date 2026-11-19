@@ -33,13 +33,15 @@ export interface ProjectSettings {
   useWatermark?: boolean;
   /** Projects saved before this existed read as `off`, so an upgrade never moves a settled selection. */
   viewerAutoSwitch: ViewerAutoSwitchMode;
+  viewerAutoSwitchLocked?: boolean;
+  canvasAutoSwitchLocked?: boolean;
 }
 
 /**
- * `latest`: each finished result takes the selection. `latest-locked`: keep following results while browsing.
+ * `latest`: each finished result takes the selection.
  * `progress`: follow finished results and live frames. `off`: leave the selection alone unless it is empty.
  */
-export type ViewerAutoSwitchMode = AutoSwitchMode | 'latest-locked';
+export type ViewerAutoSwitchMode = AutoSwitchMode;
 
 export type EffectiveProjectSettings = Required<ProjectSettings>;
 

@@ -36,6 +36,8 @@ void i18n.use(initReactI18next).init({
               autoSwitchLatest: 'Newest',
               autoSwitchOff: 'Off',
               autoSwitchProgress: 'In progress',
+              lockAutoSwitch: 'Lock Auto-switch',
+              unlockAutoSwitch: 'Unlock Auto-switch',
             },
           },
           gallery: {
@@ -73,7 +75,6 @@ void i18n.use(initReactI18next).init({
             },
           },
           preview: {
-            autoSwitchLatestLocked: 'Newest (locked)',
             compareArmedTooltip: 'Pick another image to compare · click to cancel',
             details: 'Details',
             editOnCanvas: 'Edit on Canvas',
@@ -101,6 +102,7 @@ const state = vi.hoisted(() => ({
   cancelCompare: null as null | (() => void),
   density: 'full' as 'compact' | 'full' | 'minimal' | null,
   viewerAutoSwitch: 'progress' as ViewerAutoSwitchMode,
+  viewerAutoSwitchLocked: false,
   zoom: null as null | {
     fitPercent: number | null;
     isZoomed: boolean;
@@ -182,7 +184,9 @@ vi.mock('@workbench/widgetState', () => ({
 vi.mock('@workbench/WorkbenchContext', async (importOriginal) => ({
   ...(await importOriginal<typeof WorkbenchContextModule>()),
   useActiveProjectSelector: (select: (project: unknown) => unknown) =>
-    select({ settings: { viewerAutoSwitch: state.viewerAutoSwitch } }),
+    select({
+      settings: { viewerAutoSwitch: state.viewerAutoSwitch, viewerAutoSwitchLocked: state.viewerAutoSwitchLocked },
+    }),
   useWorkbenchCommands: () => ({
     account: { updateProjectPreferences },
     generation: { setSource: vi.fn() },
@@ -263,6 +267,7 @@ beforeEach(() => {
   itemActions.recallImageData.mockClear();
   itemActions.sendToCanvas.mockClear();
   state.viewerAutoSwitch = 'progress';
+  state.viewerAutoSwitchLocked = false;
   state.zoom = null;
   patchValues.mockClear();
   showAll.mockClear();
@@ -277,7 +282,8 @@ afterEach(async () => {
 });
 
 describe('preview header Auto-switch', () => {
-  it('offers Newest (locked) and writes the chosen mode, letting go of a pinned session', async () => {
+  it('offers only three modes and changes mode while locked, letting go of a pinned session', async () => {
+    state.viewerAutoSwitchLocked = true;
     await render();
 
     await settle(() => button('Auto-switch: In progress').click());
@@ -285,10 +291,31 @@ describe('preview header Auto-switch', () => {
     await expect.element(option('In progress')).toHaveAttribute('aria-checked', 'true');
     await expect.element(option('Off')).toHaveAttribute('aria-checked', 'false');
     await expect.element(option('Newest')).toHaveAttribute('aria-checked', 'false');
-    await option('Newest (locked)').click();
+    expect(page.getByRole('menuitemradio').elements()).toHaveLength(3);
+    await option('Newest').click();
 
-    expect(updateProjectPreferences).toHaveBeenCalledExactlyOnceWith({ viewerAutoSwitch: 'latest-locked' });
+    expect(updateProjectPreferences).toHaveBeenCalledExactlyOnceWith({ viewerAutoSwitch: 'latest' });
     expect(showAll).toHaveBeenCalledOnce();
+    expect(button('Unlock Auto-switch').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('toggles the lock independently of the mode and the current live selection', async () => {
+    await render();
+    expect(button('Lock Auto-switch').getAttribute('aria-pressed')).toBe('false');
+    await settle(() => button('Lock Auto-switch').click());
+    expect(updateProjectPreferences).toHaveBeenCalledExactlyOnceWith({ viewerAutoSwitchLocked: true });
+    expect(showAll).not.toHaveBeenCalled();
+
+    updateProjectPreferences.mockClear();
+    state.viewerAutoSwitchLocked = true;
+    await settle(() => root?.unmount());
+    host?.remove();
+    await render();
+    expect(button('Unlock Auto-switch').getAttribute('aria-pressed')).toBe('true');
+    await settle(() => button('Unlock Auto-switch').click());
+    expect(updateProjectPreferences).toHaveBeenCalledExactlyOnceWith({ viewerAutoSwitchLocked: false });
+    expect(button('Auto-switch: In progress')).not.toBeNull();
+    expect(showAll).not.toHaveBeenCalled();
   });
 
   it('names the mode, Off as soon as a selection turns it off', async () => {
@@ -326,7 +353,6 @@ describe('preview header Auto-switch', () => {
       ['off', 'Off'],
       ['progress', 'In progress'],
       ['latest', 'Newest'],
-      ['latest-locked', 'Newest (locked)'],
     ] as const) {
       state.viewerAutoSwitch = mode;
       await render();
@@ -343,7 +369,7 @@ describe('preview header Auto-switch', () => {
     }
 
     // Off reads by its shape, not by dimming the icon the other modes share.
-    expect(new Set(icons.values()).size).toBe(4);
+    expect(new Set(icons.values()).size).toBe(3);
   });
 
   it('is square and sized like the icon button beside it', async () => {
@@ -386,14 +412,14 @@ describe('preview zoom menu', () => {
 });
 
 describe('preview header order', () => {
-  it('puts the item actions first, one divider, then zoom, auto-switch, and the Details toggle last', async () => {
+  it('puts item actions first, then zoom, auto-switch and its lock, with Details last', async () => {
     state.actionItem = STILL_IMAGE;
     state.zoom = { fitPercent: 88, isZoomed: false, percent: 88, reset: vi.fn(), zoomTo: vi.fn() };
     await render();
 
     const labels = [...host!.querySelectorAll<HTMLButtonElement>('button')].map((b) => b.getAttribute('aria-label'));
     expect(labels[0]).toBe('Edit');
-    expect(labels.slice(-3)).toEqual(['Zoom 88%', 'Auto-switch: In progress', 'Details']);
+    expect(labels.slice(-4)).toEqual(['Zoom 88%', 'Auto-switch: In progress', 'Lock Auto-switch', 'Details']);
     expect(host!.querySelector('[aria-label="Hide filmstrip"], [aria-label="Show filmstrip"]')).toBeNull();
     const bar = host!.firstElementChild!;
     const dividers = [...bar.children].filter((child) => child.tagName === 'DIV' && child.childElementCount === 0);

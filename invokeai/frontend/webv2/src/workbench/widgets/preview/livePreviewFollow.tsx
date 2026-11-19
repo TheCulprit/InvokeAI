@@ -17,29 +17,29 @@ interface LivePreviewFollow {
   sessions: QueueActiveSession[];
   gallerySessions: QueueProgressSession[];
   pinnedSessionId: string | null;
-  canFollowProgress: boolean;
   /** The session Auto-switch shows (`getAutoSwitchFollowedLive`); else null, and the Preview keeps the selected result. */
   followedSessionId: string | null;
   /** The newest running session without a frame while none is followed: what Preview waits for. */
   startingSession: QueueActiveSession | null;
-  /** Sets Auto-switch to In progress and pins `sessionId`: a tile click, or an arrow step onto a tile. */
+  /** Follows a chosen live tile; an unlocked mode changes to In progress. */
   follow(sessionId: string): void;
   pin(sessionId: string): void;
   showAll(): void;
+  browse(): void;
 }
 
 const LivePreviewFollowContext = createContext<LivePreviewFollow | null>(null);
 
 /** Owned by the mounted Workbench, never persisted with project documents. */
 export const LivePreviewFollowProvider = ({ children }: { children: ReactNode }) => {
-  const { projectId, items, mode } = useActiveProjectSelector((project) => ({
+  const { projectId, items, mode, locked } = useActiveProjectSelector((project) => ({
     projectId: project.id,
     items: project.queue.items,
     mode: project.settings.viewerAutoSwitch,
+    locked: project.settings.viewerAutoSwitchLocked === true,
   }));
   // Live frames show only on In progress; Newest switches to finished results alone.
   const enabled = mode === 'progress';
-  const canFollowProgress = mode !== 'latest-locked';
   const running = useActiveProgressTargets();
   const followed = useFollowedProgressTargets();
   const framed = useFramedProgressTargets();
@@ -51,27 +51,44 @@ export const LivePreviewFollowProvider = ({ children }: { children: ReactNode })
     () => getQueueProgressSessions(items.filter(isGalleryProgressItem), sessions),
     [items, sessions]
   );
-  const [selection, setSelection] = useState<{ projectId: string; sessionId: string | null }>({
+  const generationEvents = useMemo(
+    () =>
+      new Set([
+        ...sessions.filter((session) => session.hasOwnFrame).map((session) => `frame:${session.id}`),
+        ...items
+          .filter(isGalleryProgressItem)
+          .flatMap((item) => (item.completedBackendItemIds ?? []).map((id) => `result:${item.id}:${id}`)),
+      ]),
+    [items, sessions]
+  );
+  const [selection, setSelection] = useState({
     projectId,
-    sessionId: null,
+    sessionId: null as string | null,
+    browsing: false,
+    manual: false,
+    generationEvents,
   });
   const isStale =
     selection.projectId !== projectId ||
-    !enabled ||
-    (selection.sessionId !== null && !isAutoSwitchPinHeld(sessions, selection.sessionId));
-  if (isStale && (selection.sessionId !== null || selection.projectId !== projectId)) {
-    setSelection({ projectId, sessionId: null });
+    ((selection.browsing || selection.manual) &&
+      [...generationEvents].some((event) => !selection.generationEvents.has(event))) ||
+    (selection.sessionId !== null &&
+      (selection.manual
+        ? !sessions.some((session) => session.id === selection.sessionId)
+        : !enabled || !isAutoSwitchPinHeld(sessions, selection.sessionId)));
+  if (isStale) {
+    setSelection({ projectId, sessionId: null, browsing: false, manual: false, generationEvents });
   }
-  const pinnedSessionId = isStale ? null : selection.sessionId;
-  // Sessions are in backend start order, so the newest running one is followed, not the one whose frame came last.
-  const followedSession = getAutoSwitchFollowedLive(
-    mode === 'latest-locked' ? 'latest' : mode,
-    sessions,
-    pinnedSessionId
-  );
+  const current = isStale ? null : selection;
+  const pinnedSessionId = current?.sessionId ?? null;
+  const followedSession = current?.browsing
+    ? null
+    : current?.manual && pinnedSessionId
+      ? (sessions.find((session) => session.id === pinnedSessionId) ?? null)
+      : getAutoSwitchFollowedLive(mode, sessions, pinnedSessionId);
   const followedSessionId = followedSession?.id ?? null;
   const startingSession =
-    enabled && followedSession?.state !== 'running'
+    !current?.browsing && enabled && followedSession?.state !== 'running'
       ? (sessions.filter((session) => session.state === 'running' && !session.hasOwnFrame).at(-1) ?? null)
       : null;
   const { account } = useWorkbenchCommands();
@@ -81,22 +98,26 @@ export const LivePreviewFollowProvider = ({ children }: { children: ReactNode })
       gallerySessions,
       pinnedSessionId,
       followedSessionId,
-      canFollowProgress,
       startingSession,
       follow: (sessionId) => {
-        if (!canFollowProgress) {
-          return;
-        }
         const { mode: nextMode, pinnedId } = pickAutoSwitch({ id: sessionId, kind: 'live' });
-        account.updateProjectPreferences({ viewerAutoSwitch: nextMode });
-        setSelection({ projectId, sessionId: pinnedId });
+        if (!locked) {
+          account.updateProjectPreferences({ viewerAutoSwitch: nextMode });
+        }
+        setSelection({ projectId, sessionId: pinnedId, browsing: false, manual: locked, generationEvents });
       },
-      pin: (sessionId) => setSelection({ projectId, sessionId }),
-      showAll: () => setSelection({ projectId, sessionId: null }),
+      pin: (sessionId) => setSelection({ projectId, sessionId, browsing: false, manual: locked, generationEvents }),
+      showAll: () => setSelection({ projectId, sessionId: null, browsing: false, manual: false, generationEvents }),
+      browse: () => {
+        if (locked) {
+          setSelection({ projectId, sessionId: null, browsing: true, manual: false, generationEvents });
+        }
+      },
     }),
     [
       account,
-      canFollowProgress,
+      generationEvents,
+      locked,
       sessions,
       gallerySessions,
       followedSessionId,

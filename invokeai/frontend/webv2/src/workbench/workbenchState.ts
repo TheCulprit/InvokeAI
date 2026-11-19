@@ -1363,7 +1363,12 @@ const recordCanvasStagingFrame = (
     ? updateCanvasStagingFollow(state, projectId, (follow) =>
         follow.framedSlotIds.includes(slot.id)
           ? follow
-          : { ...follow, framedSlotIds: [...follow.framedSlotIds, slot.id] }
+          : {
+              ...follow,
+              browsedSlotId: null,
+              framedSlotIds: [...follow.framedSlotIds, slot.id],
+              pinnedSlotId: follow.browsedSlotId ? null : follow.pinnedSlotId,
+            }
       )
     : state;
 };
@@ -1382,9 +1387,12 @@ const updateCanvasStagingPin = (
 
   const slot = isPick ? getSelectedCanvasStagingSlot(project) : undefined;
   const pinnedSlotId = slot ? pickStagedSlotAutoSwitch(slot).pinnedId : null;
+  const browsedSlotId = isPick && project.settings.canvasAutoSwitchLocked ? (slot?.id ?? null) : null;
 
   return updateCanvasStagingFollow(state, projectId, (follow) =>
-    follow.pinnedSlotId === pinnedSlotId ? follow : { ...follow, pinnedSlotId }
+    follow.pinnedSlotId === pinnedSlotId && (follow.browsedSlotId ?? null) === browsedSlotId
+      ? follow
+      : { ...follow, browsedSlotId, pinnedSlotId }
   );
 };
 
@@ -1396,7 +1404,7 @@ const followCanvasStaging = (
 ): Project => {
   const { autoSwitchMode, selectedImageIndex } = project.canvas.stagingArea;
 
-  if (autoSwitchMode === 'off') {
+  if (autoSwitchMode === 'off' || (follow.browsedSlotId && follow.browsedSlotId === slots[selectedImageIndex]?.id)) {
     return project;
   }
 
@@ -1423,16 +1431,22 @@ const followCanvasStaging = (
 /** Forgets frames and pins of placeholders that have gone, so a slot id a retry brings back starts fresh. */
 const pruneCanvasStagingFollow = (
   follow: CanvasStagingFollow,
-  slots: readonly CanvasStagingSlot[]
+  slots: readonly CanvasStagingSlot[],
+  selectedSlotId: string | undefined
 ): CanvasStagingFollow => {
   const placeholderIds = new Set(slots.flatMap((slot) => (slot.kind === 'placeholder' ? [slot.id] : [])));
   const framedSlotIds = follow.framedSlotIds.filter((id) => placeholderIds.has(id));
+  const browsedSlotId = follow.browsedSlotId === selectedSlotId ? follow.browsedSlotId : null;
   const pinnedSlotId =
-    follow.pinnedSlotId !== null && placeholderIds.has(follow.pinnedSlotId) ? follow.pinnedSlotId : null;
+    (!follow.browsedSlotId || browsedSlotId) && follow.pinnedSlotId !== null && placeholderIds.has(follow.pinnedSlotId)
+      ? follow.pinnedSlotId
+      : null;
 
-  return framedSlotIds.length === follow.framedSlotIds.length && pinnedSlotId === follow.pinnedSlotId
+  return framedSlotIds.length === follow.framedSlotIds.length &&
+    pinnedSlotId === follow.pinnedSlotId &&
+    (follow.browsedSlotId ?? null) === browsedSlotId
     ? follow
-    : { framedSlotIds, pinnedSlotId };
+    : { ...follow, browsedSlotId, framedSlotIds, pinnedSlotId };
 };
 
 const reconcileCanvasStagingFollow = (previous: WorkbenchState, next: WorkbenchState): WorkbenchState => {
@@ -1461,10 +1475,14 @@ const reconcileCanvasStagingFollow = (previous: WorkbenchState, next: WorkbenchS
     }
 
     const slots = getCanvasStagingSlots(project.canvas, project.queue.items);
-    const pruned = pruneCanvasStagingFollow(follow ?? NO_STAGING_FOLLOW, slots);
+    const pruned = pruneCanvasStagingFollow(
+      follow ?? NO_STAGING_FOLLOW,
+      slots,
+      slots[project.canvas.stagingArea.selectedImageIndex]?.id
+    );
     const followed = followCanvasStaging(project, slots, pruned);
 
-    if (pruned.framedSlotIds.length > 0 || pruned.pinnedSlotId !== null) {
+    if (pruned.framedSlotIds.length > 0 || pruned.pinnedSlotId !== null || pruned.browsedSlotId) {
       follows[project.id] = pruned;
     }
     didChangeProjects ||= followed !== project;
@@ -3640,7 +3658,7 @@ const reconcileDeletedGalleryBoard = (
 };
 
 /**
- * A deliberate selection pauses Auto-switch unless the user has locked it to Newest.
+ * A deliberate selection pauses Auto-switch unless the user locked the chosen mode.
  */
 const updateGalleryValuesForSelection = (
   state: WorkbenchState,
@@ -3648,8 +3666,9 @@ const updateGalleryValuesForSelection = (
   projectId = state.activeProjectId
 ): WorkbenchState =>
   updateProjectById(state, projectId, (project) => {
-    const mode =
-      project.settings.viewerAutoSwitch === 'latest-locked' ? 'latest-locked' : pickAutoSwitch({ kind: 'result' }).mode;
+    const mode = project.settings.viewerAutoSwitchLocked
+      ? project.settings.viewerAutoSwitch
+      : pickAutoSwitch({ kind: 'result' }).mode;
 
     return updateProjectWidgetValues(
       project.settings.viewerAutoSwitch === mode
@@ -3773,10 +3792,7 @@ const getQueueItemStatusAfterBackendCancellation = (
 };
 
 const shouldSelectGalleryResult = (project: Project, galleryValues: Record<string, unknown>): boolean =>
-  selectsLandedResult(
-    project.settings.viewerAutoSwitch === 'latest-locked' ? 'latest' : project.settings.viewerAutoSwitch,
-    typeof galleryValues.selectedImageName === 'string'
-  );
+  selectsLandedResult(project.settings.viewerAutoSwitch, typeof galleryValues.selectedImageName === 'string');
 
 const getGalleryResultSelectionValues = (
   galleryValues: Record<string, unknown>,

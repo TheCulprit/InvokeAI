@@ -83,7 +83,14 @@ export interface WorkbenchState {
   scopedDefaults: ScopedDefaults;
   /** Transient: never persisted, synced across tabs or undone. */
   canvasStagingFollow?: Readonly<
-    Record<string, { readonly framedSlotIds: readonly string[]; readonly pinnedSlotId: string | null }>
+    Record<
+      string,
+      {
+        readonly framedSlotIds: readonly string[];
+        readonly pinnedSlotId: string | null;
+        readonly browsedSlotId?: string | null;
+      }
+    >
   >;
 }
 

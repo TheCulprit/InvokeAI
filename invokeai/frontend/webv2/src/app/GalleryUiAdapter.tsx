@@ -100,16 +100,24 @@ export const GalleryUiAdapterProvider = ({ children }: { children: ReactNode }) 
       exportProject,
       gallery: {
         ...gallery,
-        selectItem: (item, selectionPage) =>
-          selectionPage === undefined ? gallery.selectItem(item) : gallery.selectItem(item, undefined, selectionPage),
-        setItemMultiSelection: (itemKeys, primaryItem, selectionPage) =>
-          selectionPage === undefined
+        selectItem: (item, selectionPage) => {
+          livePreview.browse();
+          return selectionPage === undefined
+            ? gallery.selectItem(item)
+            : gallery.selectItem(item, undefined, selectionPage);
+        },
+        setItemMultiSelection: (itemKeys, primaryItem, selectionPage) => {
+          livePreview.browse();
+          return selectionPage === undefined
             ? gallery.setItemMultiSelection(itemKeys, primaryItem)
-            : gallery.setItemMultiSelection(itemKeys, primaryItem, undefined, selectionPage),
-        toggleItemSelection: (item, nextPrimaryItem, selectionPage) =>
-          selectionPage === undefined
+            : gallery.setItemMultiSelection(itemKeys, primaryItem, undefined, selectionPage);
+        },
+        toggleItemSelection: (item, nextPrimaryItem, selectionPage) => {
+          livePreview.browse();
+          return selectionPage === undefined
             ? gallery.toggleItemSelection(item, nextPrimaryItem)
-            : gallery.toggleItemSelection(item, nextPrimaryItem, undefined, selectionPage),
+            : gallery.toggleItemSelection(item, nextPrimaryItem, undefined, selectionPage);
+        },
         updateSettings: (settings, targetProjectId) => {
           if (!isAccountScopeCurrent(accountScope)) {
             return;
@@ -172,30 +180,25 @@ export const GalleryUiAdapterProvider = ({ children }: { children: ReactNode }) 
       progressSessions: livePreview.gallerySessions,
       pinnedProgressSessionId: livePreview.pinnedSessionId,
       followedProgressSessionId: livePreview.followedSessionId,
-      followProgressSession: livePreview.canFollowProgress
-        ? (sessionId, { revealPreview }) => {
-            if (!isAccountScopeCurrent(accountScope) || !queries.isActiveProject(projectId)) {
-              return;
-            }
-            const project = queries.getSnapshot().activeProject;
-            if (project.settings.viewerAutoSwitch === 'latest-locked') {
-              return;
-            }
-            livePreview.follow(sessionId);
-            if (!revealPreview) {
-              return;
-            }
-            // Reveal Preview where it already is; the default open would pull it into the center over the Gallery.
-            const revealed = revealPlacedWidget({ project, typeId: 'preview', widgets });
-            if (!revealed) {
-              openWorkbenchWidget('preview');
-            } else if (revealed.kind === 'floating') {
-              focusFloating(revealed.instanceId);
-            } else {
-              focusRegion(revealed.region, 'preview');
-            }
-          }
-        : undefined,
+      followProgressSession: (sessionId, { revealPreview }) => {
+        if (!isAccountScopeCurrent(accountScope) || !queries.isActiveProject(projectId)) {
+          return;
+        }
+        const project = queries.getSnapshot().activeProject;
+        livePreview.follow(sessionId);
+        if (!revealPreview) {
+          return;
+        }
+        // Reveal Preview where it already is; the default open would pull it into the center over the Gallery.
+        const revealed = revealPlacedWidget({ project, typeId: 'preview', widgets });
+        if (!revealed) {
+          openWorkbenchWidget('preview');
+        } else if (revealed.kind === 'floating') {
+          focusFloating(revealed.instanceId);
+        } else {
+          focusRegion(revealed.region, 'preview');
+        }
+      },
       notifications: {
         add: notifications.add,
         reportError: notifications.reportError,

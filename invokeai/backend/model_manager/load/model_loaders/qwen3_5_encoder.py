@@ -25,7 +25,7 @@ from invokeai.backend.model_manager.load.load_default import ModelLoader, _model
 from invokeai.backend.model_manager.load.model_loader_registry import ModelLoaderRegistry
 from invokeai.backend.model_manager.taxonomy import AnyModel, BaseModelType, ModelFormat, ModelType, SubModelType
 from invokeai.backend.model_manager.util.llamacpp_keys import convert_llamacpp_decoder_keys
-from invokeai.backend.quantization.fp8_scaled import cast_state_dict, reject_quantized_side_channel
+from invokeai.backend.quantization.fp8_scaled import cast_state_dict, reject_quantized_side_channel, safetensors_backend
 from invokeai.backend.quantization.gguf.ggml_tensor import GGMLTensor
 from invokeai.backend.quantization.gguf.loaders import gguf_sd_loader, unpack_ggml_at_load
 from invokeai.backend.quantization.gguf.row_ops import split_rows, take_rows
@@ -111,7 +111,7 @@ def load_qwen3_5_text_encoder(
 
     sd: dict[str, torch.Tensor] = {}
     for path, keys in keys_by_file.items():
-        with safe_open(path, framework="pt", device="cpu") as f:
+        with safe_open(path, framework="pt", device="cpu", backend=safetensors_backend(path)) as f:
             for key in keys:
                 if key in names:
                     sd[names[key]] = f.get_tensor(key)
